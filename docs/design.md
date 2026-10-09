@@ -24,6 +24,9 @@ modules in `lua/zulip/`
 - `conversation`: message buffer and compose buffer per conversation key
     - `load`: `GET /messages` narrowed by `channel` + `topic` or `dm`, `apply_markdown = false` so content is the Markdown as written
         - then `POST /messages/flags` adds `read`, unless `mark_read = false`
+        - new-messages marker: a line above the first message without the `read` flag
+            - `b:zulip_new_id` keeps that message across reloads, because marking read clears the flags; a later unread batch moves it
+            - a cursor on the last line moves to the marker when the load found unread messages, else to the new last line
         - narrow operators `channel` and `dm` need Zulip server 9+
     - `reload_changed`: reloads a displayed buffer when `b:zulip_newest_id` differs from the list's `newest_id`
     - `compose`: one `acwrite` buffer; `BufWriteCmd` sends, so `:w` works

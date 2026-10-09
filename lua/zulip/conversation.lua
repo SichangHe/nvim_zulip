@@ -18,15 +18,20 @@ local function valid(buf)
 end
 
 --- Buffer lines for `messages`: a heading with sender and local time, then the Markdown as written.
-function M.render(messages)
-    local lines = {}
+--- A marker line goes above the message `new_id`; its line number is the second result.
+function M.render(messages, new_id)
+    local lines, new_row = {}, nil
     for _, message in ipairs(messages) do
+        if message.id == new_id then
+            lines[#lines + 1] = "════════ new messages ════════"
+            new_row = #lines
+        end
         lines[#lines + 1] = ("## %s · %s"):format(message.sender_full_name, os.date("%Y-%m-%d %H:%M", message.timestamp))
         lines[#lines + 1] = ""
         vim.list_extend(lines, vim.split(message.content, "\n"))
         lines[#lines + 1] = ""
     end
-    return lines
+    return lines, new_row
 end
 
 --- Each of `lines` as a Markdown quote, then an empty line to write on.
@@ -39,8 +44,8 @@ function M.quote(lines)
 end
 
 --- Fetch the conversation's newest messages into its buffer,
---- move each cursor that was on the last line to the new last line,
---- and mark the messages read when `config.mark_read`.
+--- mark where the new messages start, move each cursor that was on the last line there,
+--- or to the new last line when nothing is new, and mark the messages read when `config.mark_read`.
 function M.load(conversation)
     local buf = M.bufs[conversation.key]
     local narrow = conversation.stream_id
@@ -58,18 +63,22 @@ function M.load(conversation)
         local at_end = vim.tbl_filter(function(win)
             return vim.api.nvim_win_get_cursor(win)[1] == vim.api.nvim_buf_line_count(buf)
         end, vim.fn.win_findbuf(buf))
-        vim.bo[buf].modifiable = true
-        vim.api.nvim_buf_set_lines(buf, 0, -1, false, M.render(messages))
-        vim.bo[buf].modifiable = false
-        vim.b[buf].zulip_newest_id = #messages > 0 and messages[#messages].id or 0
-        for _, win in ipairs(at_end) do
-            vim.api.nvim_win_set_cursor(win, { vim.api.nvim_buf_line_count(buf), 0 })
-        end
         local unread = {}
         for _, message in ipairs(messages) do
             if not vim.list_contains(message.flags, "read") then
                 unread[#unread + 1] = message.id
             end
+        end
+        -- 🧑 "Can't tell where new messages start"
+        -- Marking read clears the unread flags, so the marker's message is kept across reloads.
+        vim.b[buf].zulip_new_id = unread[1] or vim.b[buf].zulip_new_id
+        local lines, new_row = M.render(messages, vim.b[buf].zulip_new_id)
+        vim.bo[buf].modifiable = true
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        vim.bo[buf].modifiable = false
+        vim.b[buf].zulip_newest_id = #messages > 0 and messages[#messages].id or 0
+        for _, win in ipairs(at_end) do
+            vim.api.nvim_win_set_cursor(win, { unread[1] and new_row or #lines, 0 })
         end
         if config.mark_read and #unread > 0 then
             api.request("POST", "/messages/flags", { messages = unread, op = "add", flag = "read" }, function(flag_err)

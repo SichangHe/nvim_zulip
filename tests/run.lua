@@ -24,7 +24,11 @@ check("conversations", sidebar.conversations({
     { key = "1,2", name = "Other", user_ids = { 1, 2 }, newest_id = 2, n_unread = 1 },
 })
 check("quote", conversation.quote({ "a", "", "b" }), { "> a", ">", "> b", "" })
-check("render", vim.list_slice(conversation.render({ { sender_full_name = "Me", timestamp = 0, content = "a\nb" } }), 2), { "", "a", "b", "" })
+check("render marks new", { conversation.render({ { id = 1, sender_full_name = "Me", timestamp = 0, content = "a" }, { id = 2, sender_full_name = "Me", timestamp = 0, content = "b" } }, 2) }, {
+    { "## Me · " .. os.date("%Y-%m-%d %H:%M", 0), "", "a", "", "════════ new messages ════════", "## Me · " .. os.date("%Y-%m-%d %H:%M", 0), "", "b", "" },
+    5,
+})
+check("render", vim.list_slice(conversation.render({ { id = 1, sender_full_name = "Me", timestamp = 0, content = "a\nb" } }), 2), { "", "a", "b", "" })
 
 require("zulip").setup({ zuliprc = vim.env.ZULIPRC, mark_read = false })
 vim.cmd("Zulip")
@@ -50,7 +54,9 @@ check("sent message shows", vim.wait(20000, function()
 end), true)
 check("compose closes", vim.api.nvim_buf_is_valid(conversation.composes[myself.key]), false)
 vim.api.nvim_set_current_win(vim.fn.bufwinid(conversation.bufs[myself.key]))
-vim.cmd("normal ggVj\r")
+vim.cmd("normal gg")
+vim.fn.search("^## ", "cW")
+vim.cmd("normal Vj\r")
 check("selection is quoted", vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]:match("^> ## .+ · %d+%-%d+%-%d+ %d+:%d+$") ~= nil, true)
 vim.cmd("bwipeout!")
 sidebar.refresh()

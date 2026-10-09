@@ -24,7 +24,7 @@ Options and their defaults are in [`lua/zulip/config.lua`](lua/zulip/config.lua)
 
 `<CR>` moves one step toward sending:
 
-- sidebar: open the conversation; this marks its messages read
+- sidebar: open the conversation; this marks its messages read. A `new messages` line shows where they start, with the cursor on it
 - conversation, normal mode: open the compose buffer
 - conversation, visual mode: quote the selection into the compose buffer
 - compose buffer, normal mode: send. `:w` also sends
