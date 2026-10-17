@@ -40,6 +40,12 @@ function M.render(messages, new_id)
 end
 
 --- The span in `spans` holding `row`, or the last one starting above it.
+-- 🧑 "remember the last cursor position in each thread and resume there after reentering the thread"
+--- Per conversation key, where the cursor and top line were when the thread was left, by message.
+M.left = {}
+--- Buffers whose next load restores `M.left` into a window just switched to them.
+M.entering = {}
+
 local function span_at(spans, row)
     local found
     for _, span in ipairs(spans) do
@@ -104,9 +110,13 @@ function M.load(conversation)
         local views = {}
         if before then
             for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+                if M.entering[buf] == win then
+                    goto continue
+                end
                 local view = vim.api.nvim_win_call(win, vim.fn.winsaveview)
                 local at, top = span_at(before.spans, view.lnum), span_at(before.spans, view.topline)
                 views[win] = { view = view, at = at, top = top }
+                ::continue::
             end
         end
         local unread, unread_set = {}, {}
@@ -134,15 +144,22 @@ function M.load(conversation)
             local first = span and first_rows[span.id]
             return first and math.min(first + row - span.first, #lines) or 1
         end
+        local entering = M.entering[buf]
+        M.entering[buf] = nil
         for _, win in ipairs(vim.fn.win_findbuf(buf)) do
             local kept = views[win]
+            local left = M.left[conversation.key]
+            if not kept and left and (win == entering or not before) then
+                kept = { view = vim.api.nvim_win_call(win, vim.fn.winsaveview), at = left.at, top = left.top }
+                kept.view.lnum, kept.view.topline = left.lnum, left.topline
+            end
             if kept then
                 local view = kept.view
                 view.lnum, view.topline = moved(kept.at, view.lnum), moved(kept.top, view.topline)
                 vim.api.nvim_win_call(win, function()
                     vim.fn.winrestview(view)
                 end)
-            elseif not before then
+            elseif not before or win == entering then
                 vim.api.nvim_win_set_cursor(win, { unread[1] and new_row or #lines, 0 })
             end
             M.mark_seen(buf, win)
@@ -242,6 +259,21 @@ function M.open(conversation)
         vim.keymap.set("n", "r", function()
             M.load(conversation)
         end, { buffer = buf, desc = "Reload" })
+        vim.api.nvim_create_autocmd("BufLeave", {
+            buffer = buf,
+            callback = function()
+                local shown = M.shown[buf]
+                if shown then
+                    local view = vim.fn.winsaveview()
+                    M.left[conversation.key] = {
+                        lnum = view.lnum,
+                        topline = view.topline,
+                        at = span_at(shown.spans, view.lnum),
+                        top = span_at(shown.spans, view.topline),
+                    }
+                end
+            end,
+        })
         vim.api.nvim_create_autocmd("CursorMoved", {
             buffer = buf,
             callback = function()
@@ -256,6 +288,7 @@ function M.open(conversation)
         vim.api.nvim_win_set_width(sidebar, config.sidebar_width)
     end
     vim.api.nvim_win_set_buf(0, buf)
+    M.entering[buf] = vim.api.nvim_get_current_win()
     M.load(conversation)
 end
 

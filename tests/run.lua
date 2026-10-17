@@ -67,7 +67,16 @@ conversation.load(offline)
 check("new message: cursor stays on the same text", vim.api.nvim_get_current_line(), before_line)
 check("new message: no read without reaching it", vim.list_contains(flagged, 31), false)
 check("first message dropped: cursor moves up with its message", vim.api.nvim_win_get_cursor(owin)[1], before_row - 5)
+local kept_row = vim.api.nvim_win_get_cursor(owin)[1]
+local elsewhere = vim.api.nvim_create_buf(true, true)
+vim.api.nvim_set_current_win(owin)
+vim.api.nvim_win_set_buf(owin, elsewhere)
+conversation.open(offline)
+check("reentering resumes at the cursor left there", vim.api.nvim_win_get_cursor(vim.fn.bufwinid(obuf))[1], kept_row)
 vim.cmd("bwipeout! " .. obuf)
+conversation.open(offline)
+check("reopening a closed thread resumes there too", vim.api.nvim_win_get_cursor(vim.fn.bufwinid(conversation.bufs[offline.key]))[1], kept_row)
+vim.cmd("bwipeout! " .. conversation.bufs[offline.key])
 api.request = real_request
 if not vim.env.ZULIPRC then
     os.exit(failures == 0 and 0 or 1)
