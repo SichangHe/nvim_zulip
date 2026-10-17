@@ -24,12 +24,12 @@ Options and their defaults are in [`lua/zulip/config.lua`](lua/zulip/config.lua)
 
 `<CR>` moves one step toward sending:
 
-- sidebar: open the conversation; this marks its messages read. A `new messages` line shows where they start, with the cursor on it
+- sidebar: open the conversation. A `new messages` line shows where they start, with the cursor on it. A message is marked read when the cursor reaches its last line
 - conversation, normal mode: open the compose buffer
 - conversation, visual mode: quote the selection into the compose buffer
 - compose buffer, normal mode: send. `:w` also sends
 
-`r` refreshes the sidebar or reloads the conversation; `q` hides the sidebar. Displayed conversations reload on their own when a message arrives.
+`r` refreshes the sidebar or reloads the conversation; `q` hides the sidebar. Displayed conversations reload on their own when a message arrives, without moving the cursor or scrolling.
 
 ## Limits
 

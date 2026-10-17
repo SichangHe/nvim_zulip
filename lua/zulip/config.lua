@@ -8,7 +8,7 @@ return {
     n_recent = 500,
     --- How many of its newest messages a conversation buffer shows.
     n_shown = 100,
-    --- Whether opening a conversation marks its messages as read.
+    --- Whether a message is marked read once the cursor reaches its last line.
     mark_read = true,
     sidebar_width = 40,
     compose_height = 10,

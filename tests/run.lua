@@ -27,8 +27,51 @@ check("quote", conversation.quote({ "a", "", "b" }), { "> a", ">", "> b", "" })
 check("render marks new", { conversation.render({ { id = 1, sender_full_name = "Me", timestamp = 0, content = "a" }, { id = 2, sender_full_name = "Me", timestamp = 0, content = "b" } }, 2) }, {
     { "## Me · " .. os.date("%Y-%m-%d %H:%M", 0), "", "a", "", "════════ new messages ════════", "## Me · " .. os.date("%Y-%m-%d %H:%M", 0), "", "b", "" },
     5,
+    { { id = 1, first = 1, last = 3 }, { id = 2, first = 6, last = 8 } },
 })
 check("render", vim.list_slice(conversation.render({ { id = 1, sender_full_name = "Me", timestamp = 0, content = "a\nb" } }), 2), { "", "a", "b", "" })
+
+-- Offline: a stand-in server answers `/messages` from `served` and records read flags.
+local served, flagged, real_request = {}, {}, api.request
+api.request = function(method, path, params, callback)
+    if path == "/messages" and method == "GET" then
+        callback(nil, { messages = vim.deepcopy(served) })
+    elseif path == "/messages/flags" then
+        vim.list_extend(flagged, params.messages)
+        callback(nil, {})
+    end
+end
+local function message(id, read, content)
+    return { id = id, sender_full_name = "P", timestamp = 0, content = content or "line1\nline2", flags = read and { "read" } or {} }
+end
+for id = 1, 30 do
+    served[#served + 1] = message(id, id <= 20)
+end
+local offline = { key = "offline", name = "offline", user_ids = { 99 } }
+conversation.open(offline)
+local obuf, owin = conversation.bufs[offline.key], vim.fn.bufwinid(conversation.bufs[offline.key])
+check("first load: cursor on the new mark", vim.api.nvim_get_current_line(), "════════ new messages ════════")
+check("nothing read before the cursor reaches a message's end", flagged, {})
+local spans = conversation.shown[obuf].spans
+vim.api.nvim_win_set_cursor(owin, { spans[21].last - 1, 0 })
+vim.api.nvim_exec_autocmds("CursorMoved", { buffer = obuf })
+check("not read above its last line", flagged, {})
+vim.api.nvim_win_set_cursor(owin, { spans[22].last, 0 })
+vim.api.nvim_exec_autocmds("CursorMoved", { buffer = obuf })
+check("read up to the message whose last line the cursor reached", flagged, { 21, 22 })
+local before_line = vim.api.nvim_get_current_line()
+local before_row = vim.api.nvim_win_get_cursor(owin)[1]
+table.remove(served, 1)
+served[#served + 1] = message(31, false)
+conversation.load(offline)
+check("new message: cursor stays on the same text", vim.api.nvim_get_current_line(), before_line)
+check("new message: no read without reaching it", vim.list_contains(flagged, 31), false)
+check("first message dropped: cursor moves up with its message", vim.api.nvim_win_get_cursor(owin)[1], before_row - 5)
+vim.cmd("bwipeout! " .. obuf)
+api.request = real_request
+if not vim.env.ZULIPRC then
+    os.exit(failures == 0 and 0 or 1)
+end
 
 require("zulip").setup({ zuliprc = vim.env.ZULIPRC, mark_read = false })
 vim.cmd("Zulip")

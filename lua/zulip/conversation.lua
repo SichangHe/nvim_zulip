@@ -7,6 +7,8 @@ local M = {
     bufs = {},
     --- Compose buffer of each conversation key.
     composes = {},
+    --- Per message buffer: `spans`, each shown message's `{ id, first, last }` rows, and `unread`, a set of message IDs.
+    shown = {},
 }
 
 local function fail(err)
@@ -19,19 +21,56 @@ end
 
 --- Buffer lines for `messages`: a heading with sender and local time, then the Markdown as written.
 --- A marker line goes above the message `new_id`; its line number is the second result.
+--- The third result is each message's `{ id, first, last }`: its heading row and its last text row.
 function M.render(messages, new_id)
-    local lines, new_row = {}, nil
+    local lines, new_row, spans = {}, nil, {}
     for _, message in ipairs(messages) do
         if message.id == new_id then
             lines[#lines + 1] = "════════ new messages ════════"
             new_row = #lines
         end
+        local first = #lines + 1
         lines[#lines + 1] = ("## %s · %s"):format(message.sender_full_name, os.date("%Y-%m-%d %H:%M", message.timestamp))
         lines[#lines + 1] = ""
         vim.list_extend(lines, vim.split(message.content, "\n"))
+        spans[#spans + 1] = { id = message.id, first = first, last = #lines }
         lines[#lines + 1] = ""
     end
-    return lines, new_row
+    return lines, new_row, spans
+end
+
+--- The span in `spans` holding `row`, or the last one starting above it.
+local function span_at(spans, row)
+    local found
+    for _, span in ipairs(spans) do
+        if span.first <= row then
+            found = span
+        end
+    end
+    return found
+end
+
+-- 🧑 "Make the nvim Zulip plugin mark \"read\" only when cursor reaches the bottom of the message"
+--- Mark read, when `config.mark_read`, each unread message of `buf` whose last row the cursor in `win` has reached.
+function M.mark_seen(buf, win)
+    local shown = M.shown[buf]
+    if not (config.mark_read and shown) then
+        return
+    end
+    local row, seen = vim.api.nvim_win_get_cursor(win)[1], {}
+    for _, span in ipairs(shown.spans) do
+        if span.last <= row and shown.unread[span.id] then
+            shown.unread[span.id] = nil
+            seen[#seen + 1] = span.id
+        end
+    end
+    if #seen > 0 then
+        api.request("POST", "/messages/flags", { messages = seen, op = "add", flag = "read" }, function(err)
+            if err then
+                fail(err)
+            end
+        end)
+    end
 end
 
 --- Each of `lines` as a Markdown quote, then an empty line to write on.
@@ -43,9 +82,9 @@ function M.quote(lines)
     return quoted
 end
 
---- Fetch the conversation's newest messages into its buffer,
---- mark where the new messages start, move each cursor that was on the last line there,
---- or to the new last line when nothing is new, and mark the messages read when `config.mark_read`.
+--- Fetch the conversation's newest messages into its buffer and mark where the new messages start.
+--- On the first load each cursor goes to that mark, or to the end when nothing is new;
+--- on a reload each window keeps its view on the same messages.
 function M.load(conversation)
     local buf = M.bufs[conversation.key]
     local narrow = conversation.stream_id
@@ -60,32 +99,53 @@ function M.load(conversation)
             return
         end
         local messages = reply.messages
-        local at_end = vim.tbl_filter(function(win)
-            return vim.api.nvim_win_get_cursor(win)[1] == vim.api.nvim_buf_line_count(buf)
-        end, vim.fn.win_findbuf(buf))
-        local unread = {}
+        local before = M.shown[buf]
+        -- 🧑 "don't scroll when new messages appear": note which message each window's cursor and top line are in.
+        local views = {}
+        if before then
+            for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+                local view = vim.api.nvim_win_call(win, vim.fn.winsaveview)
+                local at, top = span_at(before.spans, view.lnum), span_at(before.spans, view.topline)
+                views[win] = { view = view, at = at, top = top }
+            end
+        end
+        local unread, unread_set = {}, {}
         for _, message in ipairs(messages) do
             if not vim.list_contains(message.flags, "read") then
                 unread[#unread + 1] = message.id
+                unread_set[message.id] = true
             end
         end
         -- 🧑 "Can't tell where new messages start"
         -- Marking read clears the unread flags, so the marker's message is kept across reloads.
         vim.b[buf].zulip_new_id = unread[1] or vim.b[buf].zulip_new_id
-        local lines, new_row = M.render(messages, vim.b[buf].zulip_new_id)
+        local lines, new_row, spans = M.render(messages, vim.b[buf].zulip_new_id)
         vim.bo[buf].modifiable = true
         vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
         vim.bo[buf].modifiable = false
         vim.b[buf].zulip_newest_id = #messages > 0 and messages[#messages].id or 0
-        for _, win in ipairs(at_end) do
-            vim.api.nvim_win_set_cursor(win, { unread[1] and new_row or #lines, 0 })
+        M.shown[buf] = { spans = spans, unread = unread_set }
+        local first_rows = {}
+        for _, span in ipairs(spans) do
+            first_rows[span.id] = span.first
         end
-        if config.mark_read and #unread > 0 then
-            api.request("POST", "/messages/flags", { messages = unread, op = "add", flag = "read" }, function(flag_err)
-                if flag_err then
-                    fail(flag_err)
-                end
-            end)
+        --- `row` moved with the message `span` it was in; 1 when that message is gone.
+        local function moved(span, row)
+            local first = span and first_rows[span.id]
+            return first and math.min(first + row - span.first, #lines) or 1
+        end
+        for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+            local kept = views[win]
+            if kept then
+                local view = kept.view
+                view.lnum, view.topline = moved(kept.at, view.lnum), moved(kept.top, view.topline)
+                vim.api.nvim_win_call(win, function()
+                    vim.fn.winrestview(view)
+                end)
+            elseif not before then
+                vim.api.nvim_win_set_cursor(win, { unread[1] and new_row or #lines, 0 })
+            end
+            M.mark_seen(buf, win)
         end
     end)
 end
@@ -182,6 +242,12 @@ function M.open(conversation)
         vim.keymap.set("n", "r", function()
             M.load(conversation)
         end, { buffer = buf, desc = "Reload" })
+        vim.api.nvim_create_autocmd("CursorMoved", {
+            buffer = buf,
+            callback = function()
+                M.mark_seen(buf, vim.api.nvim_get_current_win())
+            end,
+        })
     end
     local sidebar = vim.api.nvim_get_current_win()
     vim.cmd("wincmd p")

@@ -23,7 +23,9 @@ modules in `lua/zulip/`
     - timer runs only while the sidebar is shown; a failed `connect` stops it
 - `conversation`: message buffer and compose buffer per conversation key
     - `load`: `GET /messages` narrowed by `channel` + `topic` or `dm`, `apply_markdown = false` so content is the Markdown as written
-        - then `POST /messages/flags` adds `read`, unless `mark_read = false`
+        - `M.shown[buf]`: each message's heading and last text row (`spans`) and the unread IDs
+        - `mark_seen` on `CursorMoved`: `POST /messages/flags` adds `read` to each unread message whose last row the cursor reached, unless `mark_read = false`
+        - reload keeps each window's view: cursor and top line stay on the same message at the same offset; the first load goes to the marker or the end
         - new-messages marker: a line above the first message without the `read` flag
             - `b:zulip_new_id` keeps that message across reloads, because marking read clears the flags; a later unread batch moves it
             - a cursor on the last line moves to the marker when the load found unread messages, else to the new last line
