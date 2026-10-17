@@ -98,6 +98,8 @@ function M.load(conversation)
         or { { operator = "dm", operand = conversation.user_ids } }
     local params = { narrow = narrow, anchor = "newest", num_before = config.n_shown, num_after = 0, apply_markdown = false }
     api.request("GET", "/messages", params, function(err, reply)
+        local entering = M.entering[buf]
+        M.entering[buf] = nil
         if err then
             return fail(err)
         end
@@ -110,7 +112,7 @@ function M.load(conversation)
         local views = {}
         if before then
             for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-                if M.entering[buf] == win then
+                if entering == win then
                     goto continue
                 end
                 local view = vim.api.nvim_win_call(win, vim.fn.winsaveview)
@@ -139,13 +141,11 @@ function M.load(conversation)
         for _, span in ipairs(spans) do
             first_rows[span.id] = span.first
         end
-        --- `row` moved with the message `span` it was in; 1 when that message is gone.
+        --- `row` moved with the message `span` it was in; unchanged when that message is gone.
         local function moved(span, row)
             local first = span and first_rows[span.id]
-            return first and math.min(first + row - span.first, #lines) or 1
+            return math.max(1, math.min(first and first + row - span.first or row, #lines))
         end
-        local entering = M.entering[buf]
-        M.entering[buf] = nil
         for _, win in ipairs(vim.fn.win_findbuf(buf)) do
             local kept = views[win]
             local left = M.left[conversation.key]
