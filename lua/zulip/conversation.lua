@@ -1,6 +1,7 @@
 --- One conversation: a Markdown buffer of its messages, and a compose buffer for the reply.
 local api = require("zulip.api")
 local config = require("zulip.config")
+local loading, pending, retries = {}, {}, {}
 
 local M = {
     --- Message buffer of each conversation key.
@@ -93,14 +94,37 @@ end
 --- on a reload each window keeps its view on the same messages.
 function M.load(conversation)
     local buf = M.bufs[conversation.key]
+    if not valid(buf) then
+        return
+    end
+    if loading[buf] then
+        pending[buf] = true
+        return
+    end
+    if retries[buf] then
+        retries[buf]:stop()
+        retries[buf]:close()
+        retries[buf] = nil
+    end
+    loading[buf] = true
     local narrow = conversation.stream_id
             and { { operator = "channel", operand = conversation.stream_id }, { operator = "topic", operand = conversation.topic } }
         or { { operator = "dm", operand = conversation.user_ids } }
     local params = { narrow = narrow, anchor = "newest", num_before = config.n_shown, num_after = 0, apply_markdown = false }
     api.request("GET", "/messages", params, function(err, reply)
+        loading[buf] = nil
         local entering = M.entering[buf]
         M.entering[buf] = nil
         if err then
+            pending[buf] = nil
+            if valid(buf) and #vim.fn.win_findbuf(buf) > 0 then
+                retries[buf] = vim.defer_fn(function()
+                    retries[buf] = nil
+                    if valid(buf) and #vim.fn.win_findbuf(buf) > 0 then
+                        M.load(conversation)
+                    end
+                end, config.refresh_ms)
+            end
             return fail(err)
         end
         if not valid(buf) then
@@ -163,6 +187,10 @@ function M.load(conversation)
                 vim.api.nvim_win_set_cursor(win, { unread[1] and new_row or #lines, 0 })
             end
             M.mark_seen(buf, win)
+        end
+        if pending[buf] then
+            pending[buf] = nil
+            M.load(conversation)
         end
     end)
 end

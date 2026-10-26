@@ -6,10 +6,23 @@ local M = {
     buf = nil,
     --- Conversation shown on each sidebar line.
     rows = {},
-    timer = nil,
-    --- Whether a refresh awaits its reply; the timer skips a tick meanwhile.
+    --- Coalesce events arriving during a snapshot into one subsequent refresh.
     refreshing = false,
+    pending = false,
 }
+local generation = 0
+local retry_timer
+
+local function stop()
+    generation = generation + 1
+    M.refreshing, M.pending = false, false
+    if retry_timer then
+        retry_timer:stop()
+        retry_timer:close()
+        retry_timer = nil
+    end
+    require("zulip.events").stop()
+end
 
 --- Group `messages`, oldest first, into conversations, newest first.
 --- A conversation is a channel topic `{ stream_id, topic }` or a direct message `{ user_ids }`,
@@ -92,27 +105,46 @@ end
 --- and reload each displayed conversation that got a new message.
 function M.refresh()
     if M.refreshing then
+        M.pending = true
         return
     end
+    local started = generation
     M.refreshing = true
     api.connect(config.zuliprc, function(err)
+        if started ~= generation then
+            return
+        end
         if err then
             M.refreshing = false
-            M.timer:stop()
             return fail(err)
         end
         local params = { anchor = "newest", num_before = config.n_recent, num_after = 0, apply_markdown = false }
         api.request("GET", "/messages", params, function(get_err, reply)
+            if started ~= generation then
+                return
+            end
             M.refreshing = false
             if not vim.api.nvim_buf_is_valid(M.buf) then
-                return M.timer:stop()
+                return stop()
             end
             if get_err then
+                if not retry_timer then
+                    retry_timer = vim.defer_fn(function()
+                        retry_timer = nil
+                        if started == generation and window() then
+                            M.refresh()
+                        end
+                    end, config.refresh_ms)
+                end
                 return fail(get_err)
             end
             local conversations = M.conversations(reply.messages, api.account.user_id)
             render(conversations)
             require("zulip.conversation").reload_changed(conversations)
+            if M.pending then
+                M.pending = false
+                M.refresh()
+            end
         end)
     end)
 end
@@ -132,13 +164,14 @@ local function create_buffer()
     end, { buffer = M.buf, desc = "Open the conversation" })
     vim.keymap.set("n", "r", M.refresh, { buffer = M.buf, desc = "Refresh" })
     vim.keymap.set("n", "q", M.toggle, { buffer = M.buf, desc = "Hide the sidebar" })
+    vim.api.nvim_create_autocmd({ "BufHidden", "BufWipeout" }, { buffer = M.buf, callback = stop })
 end
 
 --- Show the sidebar, or hide it when shown.
 function M.toggle()
     local win = window()
     if win then
-        M.timer:stop()
+        stop()
         if #vim.api.nvim_tabpage_list_wins(0) == 1 then
             vim.cmd("vertical new")
         end
@@ -153,8 +186,9 @@ function M.toggle()
     for option, value in pairs({ winfixwidth = true, number = false, relativenumber = false, cursorline = true, wrap = false }) do
         vim.wo[win][0][option] = value
     end
-    M.timer = M.timer or vim.uv.new_timer()
-    M.timer:start(0, config.refresh_ms, vim.schedule_wrap(M.refresh))
+    require("zulip.events").start(M.refresh)
 end
+
+vim.api.nvim_create_autocmd("VimLeavePre", { callback = stop })
 
 return M

@@ -26,8 +26,8 @@ end
 --- Send an HTTP request to the Zulip API as `account`; the result is the decoded JSON reply.
 --- Values of `params` that are not strings are sent as JSON.
 --- The key goes to `curl` on standard input, so other users cannot see it in the process list.
-local function request(account, method, path, params, on_done)
-    local cmd = { "curl", "-sS", "--max-time", "30", "-K", "-", "-X", method, account.site .. "/api/v1" .. path }
+local function request(account, method, path, params, on_done, timeout_seconds)
+    local cmd = { "curl", "-sS", "--max-time", tostring(timeout_seconds or 30), "-K", "-", "-X", method, account.site .. "/api/v1" .. path }
     if method == "GET" then
         cmd[#cmd + 1] = "-G"
     end
@@ -35,7 +35,7 @@ local function request(account, method, path, params, on_done)
         vim.list_extend(cmd, { "--data-urlencode", name .. "=" .. (type(value) == "string" and value or vim.json.encode(value)) })
     end
     local stdin = ('user = "%s:%s"\n'):format(account.email, account.key)
-    vim.system(cmd, { text = true, stdin = stdin }, vim.schedule_wrap(function(result)
+    return vim.system(cmd, { text = true, stdin = stdin }, vim.schedule_wrap(function(result)
         if result.code ~= 0 then
             return on_done(vim.trim(result.stderr))
         end
@@ -74,8 +74,8 @@ function M.connect(zuliprc, on_done)
 end
 
 --- Send a request as the connected account.
-function M.request(method, path, params, on_done)
-    request(M.account, method, path, params, on_done)
+function M.request(method, path, params, on_done, timeout_seconds)
+    return request(M.account, method, path, params, on_done, timeout_seconds)
 end
 
 return M

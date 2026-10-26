@@ -31,6 +31,8 @@ Options and their defaults are in [`lua/zulip/config.lua`](lua/zulip/config.lua)
 
 `r` refreshes the sidebar or reloads the conversation; `q` hides the sidebar. Displayed conversations reload on their own when a message arrives, without moving the cursor or scrolling.
 
+While the sidebar is visible, Zulip's event queue delivers message and read-flag changes through long polling. Idle connections fetch no message snapshots. Interrupted connections reconnect automatically and refresh to catch up.
+
 ## Limits
 
 - The sidebar lists only conversations among the newest `n_recent` messages, and a conversation shows only its newest `n_shown` messages.
@@ -39,4 +41,4 @@ Options and their defaults are in [`lua/zulip/config.lua`](lua/zulip/config.lua)
 
 ## Develop
 
-`ZULIPRC=path nvim -l tests/run.lua` runs the checks against the live server; it sends one direct message from the account to itself. Design notes are in [`docs/design.md`](docs/design.md).
+`env -u ZULIPRC nvim -l tests/run.lua` checks rendering and cursor/read behavior offline; `nvim -l tests/events.lua` checks event delivery, reconnects, and request races through a local HTTP server. `ZULIPRC=path nvim -l tests/run.lua` also runs against the live server and sends one direct message from the account to itself. Design notes are in [`docs/design.md`](docs/design.md).
