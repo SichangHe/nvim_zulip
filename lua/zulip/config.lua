@@ -3,7 +3,8 @@ return {
     --- File with the account's `email`, `key` and `site`, as downloaded from Zulip.
     zuliprc = "~/.zuliprc",
     --- Sidebar refresh period.
-    refresh_ms = 10000,
+    -- 🧑 "nvim zulip plugin delay is quite big on receiving messages"
+    refresh_ms = 2000,
     --- How many of the newest messages the sidebar groups into conversations.
     n_recent = 500,
     --- How many of its newest messages a conversation buffer shows.

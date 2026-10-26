@@ -21,6 +21,7 @@ modules in `lua/zulip/`
     - `refreshing` skips a timer tick while a reply is awaited, so replies cannot arrive out of order
     - each refresh calls `conversation.reload_changed`
     - timer runs only while the sidebar is shown; a failed `connect` stops it
+        - default period is 2 seconds; network requests add to arrival latency
 - `conversation`: message buffer and compose buffer per conversation key
     - `load`: `GET /messages` narrowed by `channel` + `topic` or `dm`, `apply_markdown = false` so content is the Markdown as written
         - `M.shown[buf]`: each message's heading and last text row (`spans`) and the unread IDs
