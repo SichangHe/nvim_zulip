@@ -2,6 +2,7 @@
 local api = require("zulip.api")
 local config = require("zulip.config")
 local loading, pending, retries = {}, {}, {}
+local viz = require("zulip.viz")
 
 local M = {
     --- Message buffer of each conversation key.
@@ -159,6 +160,7 @@ function M.load(conversation)
         vim.bo[buf].modifiable = true
         vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
         vim.bo[buf].modifiable = false
+        viz.show(buf)
         vim.b[buf].zulip_newest_id = #messages > 0 and messages[#messages].id or 0
         M.shown[buf] = { spans = spans, unread = unread_set }
         local first_rows = {}
@@ -284,6 +286,7 @@ function M.open(conversation)
             vim.cmd.normal({ vim.keycode("<Esc>"), bang = true })
             M.compose(conversation, M.quote(selection))
         end, { buffer = buf, desc = "Quote the selection into a reply" })
+        vim.keymap.set("n", "gx", viz.open, { buffer = buf, desc = "Open the upload on this line" })
         vim.keymap.set("n", "r", function()
             M.load(conversation)
         end, { buffer = buf, desc = "Reload" })

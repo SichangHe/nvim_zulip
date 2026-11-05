@@ -78,4 +78,27 @@ function M.request(method, path, params, on_done, timeout_seconds)
     return request(M.account, method, path, params, on_done, timeout_seconds)
 end
 
+--- Download the upload at `path` (`/user_uploads/...`) to the file `dest`.
+--- Asks the API for a temporary URL first, so the key never goes into a download URL.
+function M.download(path, dest, on_done)
+    local rest = path:match("^/user_uploads/(.+)$")
+    if not rest then
+        return on_done("not an upload: " .. path)
+    end
+    M.request("GET", "/user_uploads/" .. rest, {}, function(err, reply)
+        if err then
+            return on_done(err)
+        end
+        vim.fn.mkdir(vim.fs.dirname(dest), "p")
+        local cmd = { "curl", "-sSf", "--max-time", "60", "-o", dest .. ".part", M.account.site .. reply.url }
+        vim.system(cmd, {}, vim.schedule_wrap(function(result)
+            if result.code ~= 0 then
+                return on_done(vim.trim(result.stderr))
+            end
+            vim.uv.fs_rename(dest .. ".part", dest)
+            on_done()
+        end))
+    end)
+end
+
 return M
