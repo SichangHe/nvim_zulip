@@ -26,6 +26,7 @@ Options and their defaults are in [`lua/zulip/config.lua`](lua/zulip/config.lua)
 
 - sidebar: open the conversation. A `new messages` line shows where they start, with the cursor on it the first time; reentering a conversation resumes where the cursor was left. A message is marked read when the cursor reaches its last line
 - conversation, normal mode: open the compose buffer
+- conversation, `gf` on a task tag such as `[nvim_omnigent]` or `nvim_omnigent.md`: open the channel topic of that name; elsewhere `gf` works as usual
 - conversation, visual mode: quote the selection into the compose buffer
 - compose buffer, normal mode: send. `:w` also sends
 

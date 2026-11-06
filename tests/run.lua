@@ -23,6 +23,7 @@ check("conversations", sidebar.conversations({
     { key = "7/t", name = "s > t", stream_id = 7, topic = "t", newest_id = 3, n_unread = 1 },
     { key = "1,2", name = "Other", user_ids = { 1, 2 }, newest_id = 2, n_unread = 1 },
 })
+check("tag", { conversation.tag("[nvim_omnigent]"), conversation.tag("nvim_omnigent.md:"), conversation.tag("a/b"), conversation.tag("x.y") }, { "nvim_omnigent", "nvim_omnigent", nil, nil })
 check("quote", conversation.quote({ "a", "", "b" }), { "> a", ">", "> b", "" })
 check("render marks new", { conversation.render({ { id = 1, sender_full_name = "Me", timestamp = 0, content = "a" }, { id = 2, sender_full_name = "Me", timestamp = 0, content = "b" } }, 2) }, {
     { "## Me · " .. os.date("%Y-%m-%d %H:%M", 0), "", "a", "", "════════ new messages ════════", "## Me · " .. os.date("%Y-%m-%d %H:%M", 0), "", "b", "" },

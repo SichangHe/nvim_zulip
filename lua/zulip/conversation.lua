@@ -269,7 +269,26 @@ function M.compose(conversation, quoted)
     vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 end
 
---- Show `conversation` in the window beside the sidebar and load its messages.
+--- The task tag in `word`, such as `nvim_omnigent` in `[nvim_omnigent]` or `nvim_omnigent.md`, or `nil`.
+function M.tag(word)
+    return word:match("[%w_%-]+%.md") and word:match("([%w_%-]+)%.md") or word:match("^%W*([%w_%-]+)%W*$")
+end
+
+--- 🧑 "jump to the conversation on gf on a tag"
+--- Open the channel topic named by the tag under the cursor; otherwise run the built-in `gf`.
+function M.goto_tag()
+    local tag = M.tag(vim.fn.expand("<cWORD>"))
+    local target = tag and vim.iter(require("zulip.sidebar").rows):find(function(conversation)
+        return conversation.topic and conversation.topic:lower() == tag:lower()
+    end)
+    if not target then
+        return vim.cmd.normal({ "gf", bang = true })
+    end
+    M.open(target)
+end
+
+--- Show `conversation` and load its messages:
+--- from the sidebar in the window beside it, from elsewhere in the current window.
 function M.open(conversation)
     local buf = M.bufs[conversation.key]
     if not valid(buf) then
@@ -286,6 +305,7 @@ function M.open(conversation)
             vim.cmd.normal({ vim.keycode("<Esc>"), bang = true })
             M.compose(conversation, M.quote(selection))
         end, { buffer = buf, desc = "Quote the selection into a reply" })
+        vim.keymap.set("n", "gf", M.goto_tag, { buffer = buf, desc = "Open the conversation of the tag under the cursor" })
         vim.keymap.set("n", "gx", viz.open, { buffer = buf, desc = "Open the upload on this line" })
         vim.keymap.set("n", "r", function()
             M.load(conversation)
@@ -312,11 +332,13 @@ function M.open(conversation)
             end,
         })
     end
-    local sidebar = vim.api.nvim_get_current_win()
-    vim.cmd("wincmd p")
-    if vim.api.nvim_get_current_win() == sidebar then
-        vim.cmd("rightbelow vertical new")
-        vim.api.nvim_win_set_width(sidebar, config.sidebar_width)
+    if vim.bo.filetype == "zulip" then
+        local sidebar = vim.api.nvim_get_current_win()
+        vim.cmd("wincmd p")
+        if vim.api.nvim_get_current_win() == sidebar then
+            vim.cmd("rightbelow vertical new")
+            vim.api.nvim_win_set_width(sidebar, config.sidebar_width)
+        end
     end
     vim.api.nvim_win_set_buf(0, buf)
     M.entering[buf] = vim.api.nvim_get_current_win()

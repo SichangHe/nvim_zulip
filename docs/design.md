@@ -44,6 +44,8 @@ modules in `lua/zulip/`
             - a cursor on the last line moves to the marker when the load found unread messages, else to the new last line
         - narrow operators `channel` and `dm` need Zulip server 9+
     - `reload_changed`: reloads a displayed buffer when `b:zulip_newest_id` differs from the list's `newest_id`
+    - `goto_tag` (`gf`): `tag` takes `NAME` from `[NAME]`, `NAME.md` or a bare word; opens the sidebar row whose topic equals it ignoring case, in the current window; no match runs the built-in `gf`
+        - only listed conversations are found, i.e. topics among the newest `n_recent` messages
     - `compose`: one `acwrite` buffer; `BufWriteCmd` sends, so `:w` works
     - `send`: `POST /messages`, `type` `stream` or `direct`; then deletes the compose buffer and reloads
 
