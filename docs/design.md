@@ -53,8 +53,10 @@ modules in `lua/zulip/`
     - `uploads`: matches `/user_uploads/...` links, relative or with the server address
     - downloads once into `stdpath("cache")/zulip`; PDFs become `FILE.png`, first page by `pdftoppm`, skipped without it
     - `toggle` (`p`) flips `config.previews` and redraws every conversation buffer; off means placements cleared
+- `voice`: speech through the voice service, agent switching; see [`voice.md`](voice.md)
 
 tests
 - `tests/events.lua`: real curl requests to a local HTTP fixture; heartbeat, message, read flags, cursor, in-flight snapshot event, expired queue, hide, late registration
+- `tests/voice.lua`: live voice service round trips
 - `tests/run.lua`: pure checks, then sidebar, open, compose, send, quote against the live server
     - sends to the account itself; `mark_read = false` so a bot account's flags stay untouched

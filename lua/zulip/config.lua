@@ -13,6 +13,31 @@ return {
     mark_read = true,
     --- Whether uploaded images and PDFs show inline; `p` in a conversation toggles it.
     previews = true,
+    --- Voice service (`docs/voice.md`). Commands run where `via` says, e.g. `{ "ssh", "-p", "2222", "localhost" }` for the laptop.
+    -- 🧑 "We should separate out the voice services and allow the NeoVim Zulip plugin to also use it."
+    voice = {
+        --- Private channel the service listens on.
+        channel = "voice-relay",
+        --- Seconds to wait for one result.
+        timeout_s = 60,
+        --- Read new messages from others aloud as they arrive.
+        autoplay = false,
+        --- Prefix for `play_cmd` and `record_cmd`; empty runs them where Neovim runs.
+        via = {},
+        --- Plays the audio on its standard input.
+        play_cmd = { "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-i", "-" },
+        --- Writes WebM to standard output; stops on `q` on standard input.
+        record_cmd = { "ffmpeg", "-loglevel", "error", "-f", "pulse", "-i", "default", "-ac", "1", "-ar", "16000", "-t", "120", "-c:a", "libopus", "-f", "webm", "-" },
+        --- Buffer-local mappings in conversations and compose buffers; set one to `false` to skip it.
+        keys = {
+            speak = "gs",
+            speak_from = "gS",
+            stop = "gh",
+            autoplay = "gA",
+            dictate = "<C-g>",
+            compose_dictate = "gd",
+        },
+    },
     sidebar_width = 40,
     compose_height = 10,
     --- Global mappings; set one to `false` to skip it.

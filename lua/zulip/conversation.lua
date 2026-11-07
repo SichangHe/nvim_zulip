@@ -3,13 +3,14 @@ local api = require("zulip.api")
 local config = require("zulip.config")
 local loading, pending, retries = {}, {}, {}
 local viz = require("zulip.viz")
+local voice = require("zulip.voice")
 
 local M = {
     --- Message buffer of each conversation key.
     bufs = {},
     --- Compose buffer of each conversation key.
     composes = {},
-    --- Per message buffer: `spans`, each shown message's `{ id, first, last }` rows, and `unread`, a set of message IDs.
+    --- Per message buffer: `spans`, each shown message's `{ id, first, last }` rows, `messages`, and `unread`, a set of message IDs.
     shown = {},
 }
 
@@ -36,7 +37,8 @@ function M.render(messages, new_id, site)
         lines[#lines + 1] = ("## %s · %s"):format(message.sender_full_name, os.date("%Y-%m-%d %H:%M", message.timestamp))
         lines[#lines + 1] = ""
         -- 🧑 "Automatically prepend the server domain name in the links"
-        local content = site and message.content:gsub("%]%(/", "](" .. site .. "/") or message.content
+        local content = message.content:gsub("\n?%[switch: [^\n]*%]", "")
+        content = site and content:gsub("%]%(/", "](" .. site .. "/") or content
         vim.list_extend(lines, vim.split(content, "\n"))
         spans[#spans + 1] = { id = message.id, first = first, last = #lines }
         lines[#lines + 1] = ""
@@ -82,6 +84,22 @@ function M.mark_seen(buf, win)
             end
         end)
     end
+end
+
+--- Read aloud the message under the cursor of `buf`, or with `from_here` it and all after it.
+local function speak(buf, from_here)
+    local shown = M.shown[buf]
+    local at = shown and span_at(shown.spans, vim.api.nvim_win_get_cursor(0)[1])
+    if not at then
+        return fail("no message here")
+    end
+    local messages = {}
+    for i, span in ipairs(shown.spans) do
+        if span.id == at.id or (from_here and #messages > 0) then
+            messages[#messages + 1] = shown.messages[i]
+        end
+    end
+    voice.speak_messages(messages, from_here)
 end
 
 --- Each of `lines` as a Markdown quote, then an empty line to write on.
@@ -136,6 +154,14 @@ function M.load(conversation)
         end
         local messages = reply.messages
         local before = M.shown[buf]
+        local newest_before = vim.b[buf].zulip_newest_id
+        if before and api.account then
+            local received = vim.tbl_filter(function(message)
+                return message.id > newest_before and message.sender_id ~= api.account.user_id
+            end, messages)
+            voice.autoplay(received)
+            M.switch_to(buf, received)
+        end
         -- 🧑 "don't scroll when new messages appear": note which message each window's cursor and top line are in.
         local views = {}
         if before then
@@ -165,7 +191,7 @@ function M.load(conversation)
         vim.bo[buf].modifiable = false
         viz.show(buf)
         vim.b[buf].zulip_newest_id = #messages > 0 and messages[#messages].id or 0
-        M.shown[buf] = { spans = spans, unread = unread_set }
+        M.shown[buf] = { spans = spans, messages = messages, unread = unread_set }
         local first_rows = {}
         for _, span in ipairs(spans) do
             first_rows[span.id] = span.first
@@ -257,6 +283,11 @@ function M.compose(conversation, quoted)
             end,
         })
         vim.keymap.set("n", "<CR>", "<Cmd>write<CR>", { buffer = buf, desc = "Send" })
+        if config.voice.keys.dictate then
+            vim.keymap.set({ "n", "i" }, config.voice.keys.dictate, function()
+                voice.dictate(buf)
+            end, { buffer = buf, desc = "Start or stop dictating" })
+        end
     end
     local win = vim.fn.bufwinid(buf)
     if win == -1 then
@@ -277,17 +308,48 @@ function M.tag(word)
     return word:match("[%w_%-]+%.md") and word:match("([%w_%-]+)%.md") or word:match("^%W*([%w_%-]+)%W*$")
 end
 
---- 🧑 "jump to the conversation on gf on a tag"
---- Open the channel topic named by the tag under the cursor; otherwise run the built-in `gf`.
-function M.goto_tag()
-    local tag = M.tag(vim.fn.expand("<cWORD>"))
+--- Open the listed channel topic named `tag`, ignoring case; false when there is none.
+local function open_tag(tag)
     local target = tag and vim.iter(require("zulip.sidebar").rows):find(function(conversation)
         return conversation.topic and conversation.topic:lower() == tag:lower()
     end)
-    if not target then
-        return vim.cmd.normal({ "gf", bang = true })
+    if target then
+        M.open(target)
     end
-    M.open(target)
+    return target ~= nil
+end
+
+--- 🧑 "jump to the conversation on gf on a tag"
+--- Open the channel topic named by the tag under the cursor; otherwise run the built-in `gf`.
+function M.goto_tag()
+    if not open_tag(M.tag(vim.fn.expand("<cWORD>"))) then
+        vim.cmd.normal({ "gf", bang = true })
+    end
+end
+
+-- 🧑 "The agent switching control should also work in nvim"
+--- Follow the last `[switch: TASK]` line in the new `messages` of `buf`, in the window showing it:
+--- at once, or after the reading in progress ends. An unknown task only warns.
+function M.switch_to(buf, messages)
+    local task
+    for _, message in ipairs(messages) do
+        for line in message.content:gmatch("[^\n]+") do
+            task = line:match("^%[switch: (.-)%]%s*$") or task
+        end
+    end
+    local win = vim.fn.bufwinid(buf)
+    if not task or win == -1 then
+        return
+    end
+    task = vim.trim(task):gsub("%.md$", "")
+    voice.after_reading(function()
+        if vim.api.nvim_win_is_valid(win) then
+            vim.api.nvim_set_current_win(win)
+            if not open_tag(task) then
+                vim.notify("zulip: no conversation for " .. task, vim.log.levels.WARN)
+            end
+        end
+    end)
 end
 
 --- Show `conversation` and load its messages:
@@ -311,6 +373,24 @@ function M.open(conversation)
         vim.keymap.set("n", "gf", M.goto_tag, { buffer = buf, desc = "Open the conversation of the tag under the cursor" })
         vim.keymap.set("n", "p", viz.toggle, { buffer = buf, desc = "Show or hide previews" })
         vim.keymap.set("n", "gx", viz.open, { buffer = buf, desc = "Open the upload on this line" })
+        local keys = config.voice.keys
+        local function map(key, fn, desc)
+            if key then
+                vim.keymap.set("n", key, fn, { buffer = buf, desc = desc })
+            end
+        end
+        map(keys.speak, function()
+            speak(buf, false)
+        end, "Read the message aloud")
+        map(keys.speak_from, function()
+            speak(buf, true)
+        end, "Read the conversation aloud from here")
+        map(keys.stop, voice.stop, "Stop reading aloud")
+        map(keys.autoplay, "<Cmd>ZulipAutoplay<CR>", "Toggle reading new messages aloud")
+        map(keys.compose_dictate, function()
+            M.compose(conversation)
+            voice.dictate(M.composes[conversation.key])
+        end, "Dictate a reply")
         vim.keymap.set("n", "r", function()
             M.load(conversation)
         end, { buffer = buf, desc = "Reload" })

@@ -10,6 +10,12 @@ function M.setup(opts)
     end
     local toggle = require("zulip.sidebar").toggle
     vim.api.nvim_create_user_command("Zulip", toggle, {})
+    local voice = require("zulip.voice")
+    vim.api.nvim_create_user_command("ZulipStop", voice.stop, {})
+    vim.api.nvim_create_user_command("ZulipAutoplay", function()
+        config.voice.autoplay = not config.voice.autoplay
+        vim.notify("zulip voice: autoplay " .. (config.voice.autoplay and "on" or "off"))
+    end, {})
     if config.keys.toggle then
         vim.keymap.set("n", config.keys.toggle, toggle, { desc = "Zulip: show or hide conversations" })
     end

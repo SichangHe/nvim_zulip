@@ -36,6 +36,26 @@ Links to the Zulip server carry its full address, so `gx` or a click opens them.
 
 While the sidebar is visible, Zulip's event queue delivers message and read-flag changes through long polling. Idle connections fetch no message snapshots. Interrupted connections reconnect automatically and refresh to catch up.
 
+## Voice
+
+Reads messages aloud and dictates replies through the voice service (private channel `voice-relay`; the `zuliprc` must be the human's account). Needs `ffmpeg`/`ffplay` wherever the audio is played and recorded.
+
+- conversation: `gs` reads the message under the cursor, `gS` the conversation from there on, `gh` stops, `gA` or `:ZulipAutoplay` toggles reading new messages from others, `gd` opens the compose buffer and starts dictating
+- compose buffer: `<C-g>` (normal or insert) starts recording and stops it; the transcript is inserted at the cursor
+- a new message from someone else ending in `[switch: TASK]` opens that task's conversation, after it is read aloud if reading
+
+Neovim over SSH has no speakers or microphone, so run the audio commands on the laptop through a reverse tunnel. In `~/.ssh/config` on the laptop add `RemoteForward 2222 localhost:22` for the host, enable Remote Login on macOS, install `ffmpeg` with Homebrew, then:
+
+```lua
+opts = { voice = {
+    via = { "ssh", "-p", "2222", "localhost" },
+    play_cmd = { "/opt/homebrew/bin/ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-i", "-" },
+    record_cmd = { "/opt/homebrew/bin/ffmpeg", "-loglevel", "error", "-f", "avfoundation", "-i", ":0", "-ac", "1", "-ar", "16000", "-t", "120", "-c:a", "libopus", "-f", "webm", "-" },
+} }
+```
+
+Without `via`, the defaults play and record on the machine running Neovim (PulseAudio).
+
 ## Limits
 
 - The sidebar lists only conversations among the newest `n_recent` messages, and a conversation shows only its newest `n_shown` messages.
@@ -44,4 +64,4 @@ While the sidebar is visible, Zulip's event queue delivers message and read-flag
 
 ## Develop
 
-`env -u ZULIPRC nvim -l tests/run.lua` checks rendering and cursor/read behavior offline; `nvim -l tests/events.lua` checks event delivery, reconnects, and request races through a local HTTP server. `ZULIPRC=path nvim -l tests/run.lua` also runs against the live server and sends one direct message from the account to itself. Design notes are in [`docs/design.md`](docs/design.md).
+`ZULIPRC=<the human's zuliprc> nvim -l tests/voice.lua` checks voice against the live service. `env -u ZULIPRC nvim -l tests/run.lua` checks rendering and cursor/read behavior offline; `nvim -l tests/events.lua` checks event delivery, reconnects, and request races through a local HTTP server. `ZULIPRC=path nvim -l tests/run.lua` also runs against the live server and sends one direct message from the account to itself. Design notes are in [`docs/design.md`](docs/design.md).

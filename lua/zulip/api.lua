@@ -24,7 +24,7 @@ function M.parse_zuliprc(lines)
 end
 
 --- Send an HTTP request to the Zulip API as `account`; the result is the decoded JSON reply.
---- Values of `params` that are not strings are sent as JSON.
+--- Values of `params` that are not strings are sent as JSON, except `{ file = path }`, which uploads that file.
 --- The key goes to `curl` on standard input, so other users cannot see it in the process list.
 local function request(account, method, path, params, on_done, timeout_seconds)
     local cmd = { "curl", "-sS", "--max-time", tostring(timeout_seconds or 30), "-K", "-", "-X", method, account.site .. "/api/v1" .. path }
@@ -32,7 +32,11 @@ local function request(account, method, path, params, on_done, timeout_seconds)
         cmd[#cmd + 1] = "-G"
     end
     for name, value in pairs(params) do
-        vim.list_extend(cmd, { "--data-urlencode", name .. "=" .. (type(value) == "string" and value or vim.json.encode(value)) })
+        if type(value) == "table" and value.file then
+            vim.list_extend(cmd, { "-F", name .. "=@" .. value.file })
+        else
+            vim.list_extend(cmd, { "--data-urlencode", name .. "=" .. (type(value) == "string" and value or vim.json.encode(value)) })
+        end
     end
     local stdin = ('user = "%s:%s"\n'):format(account.email, account.key)
     return vim.system(cmd, { text = true, stdin = stdin }, vim.schedule_wrap(function(result)
