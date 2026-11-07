@@ -24,7 +24,8 @@ end
 --- Buffer lines for `messages`: a heading with sender and local time, then the Markdown as written.
 --- A marker line goes above the message `new_id`; its line number is the second result.
 --- The third result is each message's `{ id, first, last }`: its heading row and its last text row.
-function M.render(messages, new_id)
+--- Links relative to the server, such as `](/user_uploads/...)`, get the server address `site` prepended.
+function M.render(messages, new_id, site)
     local lines, new_row, spans = {}, nil, {}
     for _, message in ipairs(messages) do
         if message.id == new_id then
@@ -34,7 +35,9 @@ function M.render(messages, new_id)
         local first = #lines + 1
         lines[#lines + 1] = ("## %s · %s"):format(message.sender_full_name, os.date("%Y-%m-%d %H:%M", message.timestamp))
         lines[#lines + 1] = ""
-        vim.list_extend(lines, vim.split(message.content, "\n"))
+        -- 🧑 "Automatically prepend the server domain name in the links"
+        local content = site and message.content:gsub("%]%(/", "](" .. site .. "/") or message.content
+        vim.list_extend(lines, vim.split(content, "\n"))
         spans[#spans + 1] = { id = message.id, first = first, last = #lines }
         lines[#lines + 1] = ""
     end
@@ -156,7 +159,7 @@ function M.load(conversation)
         -- 🧑 "Can't tell where new messages start"
         -- Marking read clears the unread flags, so the marker's message is kept across reloads.
         vim.b[buf].zulip_new_id = unread[1] or vim.b[buf].zulip_new_id
-        local lines, new_row, spans = M.render(messages, vim.b[buf].zulip_new_id)
+        local lines, new_row, spans = M.render(messages, vim.b[buf].zulip_new_id, api.account and api.account.site)
         vim.bo[buf].modifiable = true
         vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
         vim.bo[buf].modifiable = false
@@ -306,6 +309,7 @@ function M.open(conversation)
             M.compose(conversation, M.quote(selection))
         end, { buffer = buf, desc = "Quote the selection into a reply" })
         vim.keymap.set("n", "gf", M.goto_tag, { buffer = buf, desc = "Open the conversation of the tag under the cursor" })
+        vim.keymap.set("n", "p", viz.toggle, { buffer = buf, desc = "Show or hide previews" })
         vim.keymap.set("n", "gx", viz.open, { buffer = buf, desc = "Open the upload on this line" })
         vim.keymap.set("n", "r", function()
             M.load(conversation)

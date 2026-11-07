@@ -1,16 +1,18 @@
---- Visualizations in a conversation: uploaded images show inline under their link
+--- Visualizations in a conversation: uploaded images, and the first page of uploaded PDFs, show inline under their link
 --- (snacks.nvim image support, e.g. Kitty's graphics protocol, also through tmux),
 --- and `gx` opens the uploaded HTML on the line under the cursor.
 local api = require("zulip.api")
+
+local config = require("zulip.config")
 
 local M = {}
 
 local IMAGE = { png = true, jpg = true, jpeg = true, gif = true, webp = true }
 
---- Each upload link in `line`: its path and lowercase extension.
+--- Each upload link in `line`, relative or with the server address: its path and lowercase extension.
 function M.uploads(line)
     local found = {}
-    for path in line:gmatch("%]%((/user_uploads/[^)%s]+)%)") do
+    for path in line:gmatch("%]%([^)%s]-(/user_uploads/[^)%s]+)%)") do
         found[#found + 1] = { path = path, ext = (path:match("%.(%w+)$") or ""):lower() }
     end
     return found
@@ -35,22 +37,56 @@ local function snacks_image()
     return ok and snacks.image and snacks.image.supports_terminal() and snacks.image or nil
 end
 
---- Show each uploaded image of `buf` inline below its line.
+--- PNG of the first page of the local PDF `pdf`, rendered once with `pdftoppm`.
+local function first_page(pdf, on_png)
+    local png = pdf .. ".png"
+    if vim.uv.fs_stat(png) then
+        return on_png(png)
+    end
+    vim.system({ "pdftoppm", "-png", "-singlefile", "-f", "1", "-r", "100", pdf, pdf }, {}, vim.schedule_wrap(function(result)
+        if result.code ~= 0 then
+            return vim.notify("zulip: pdftoppm: " .. vim.trim(result.stderr), vim.log.levels.WARN)
+        end
+        on_png(png)
+    end))
+end
+
+--- Show each uploaded image, and each uploaded PDF's first page, of `buf` inline below its line,
+--- unless `config.previews` is off.
 function M.show(buf)
     local image = snacks_image()
     if not image then
         return
     end
     image.placement.clean(buf)
+    if not config.previews then
+        return
+    end
     for row, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
         for _, upload in ipairs(M.uploads(line)) do
+            local function place(file)
+                if config.previews and vim.api.nvim_buf_is_valid(buf) then
+                    image.placement.new(buf, file, { pos = { row, 0 }, inline = true })
+                end
+            end
             if IMAGE[upload.ext] then
+                fetch(upload.path, place)
+            elseif upload.ext == "pdf" and vim.fn.executable("pdftoppm") == 1 then
                 fetch(upload.path, function(file)
-                    if vim.api.nvim_buf_is_valid(buf) then
-                        image.placement.new(buf, file, { pos = { row, 0 }, inline = true })
-                    end
+                    first_page(file, place)
                 end)
             end
+        end
+    end
+end
+
+-- 🧑 "allow previews to be toggleable"
+--- Turn previews on or off in every conversation buffer.
+function M.toggle()
+    config.previews = not config.previews
+    for _, buf in pairs(require("zulip.conversation").bufs) do
+        if vim.api.nvim_buf_is_valid(buf) then
+            M.show(buf)
         end
     end
 end

@@ -48,6 +48,11 @@ modules in `lua/zulip/`
         - only listed conversations are found, i.e. topics among the newest `n_recent` messages
     - `compose`: one `acwrite` buffer; `BufWriteCmd` sends, so `:w` works
     - `send`: `POST /messages`, `type` `stream` or `direct`; then deletes the compose buffer and reloads
+    - `render` prepends the server address to links starting `](/`, so Neovim can open them
+- `viz`: previews under upload links via snacks.nvim image placements
+    - `uploads`: matches `/user_uploads/...` links, relative or with the server address
+    - downloads once into `stdpath("cache")/zulip`; PDFs become `FILE.png`, first page by `pdftoppm`, skipped without it
+    - `toggle` (`p`) flips `config.previews` and redraws every conversation buffer; off means placements cleared
 
 tests
 - `tests/events.lua`: real curl requests to a local HTTP fixture; heartbeat, message, read flags, cursor, in-flight snapshot event, expired queue, hide, late registration

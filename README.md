@@ -30,7 +30,7 @@ Options and their defaults are in [`lua/zulip/config.lua`](lua/zulip/config.lua)
 - conversation, visual mode: quote the selection into the compose buffer
 - compose buffer, normal mode: send. `:w` also sends
 
-Uploaded images show inline under their link when [snacks.nvim](https://github.com/folke/snacks.nvim) image support works in your terminal (e.g. Kitty, also through tmux). `gx` opens the upload on the cursor line, preferring HTML: with a `viz` command on `PATH` it goes there, else to `vim.ui.open`.
+Links to the Zulip server carry its full address, so `gx` or a click opens them. Uploaded images, and the first page of uploaded PDFs (needs `pdftoppm` from Poppler), show inline under their link when [snacks.nvim](https://github.com/folke/snacks.nvim) image support works in your terminal (e.g. Kitty, also through tmux). `p` in a conversation shows or hides these previews. `gx` opens the upload on the cursor line, preferring HTML: with a `viz` command on `PATH` it goes there, else to `vim.ui.open`.
 
 `r` refreshes the sidebar or reloads the conversation; `q` hides the sidebar. Displayed conversations reload on their own when a message arrives, without moving the cursor or scrolling.
 

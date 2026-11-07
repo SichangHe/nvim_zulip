@@ -11,6 +11,8 @@ return {
     n_shown = 100,
     --- Whether a message is marked read once the cursor reaches its last line.
     mark_read = true,
+    --- Whether uploaded images and PDFs show inline; `p` in a conversation toggles it.
+    previews = true,
     sidebar_width = 40,
     compose_height = 10,
     --- Global mappings; set one to `false` to skip it.

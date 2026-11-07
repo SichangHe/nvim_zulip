@@ -24,6 +24,8 @@ check("conversations", sidebar.conversations({
     { key = "1,2", name = "Other", user_ids = { 1, 2 }, newest_id = 2, n_unread = 1 },
 })
 check("tag", { conversation.tag("[nvim_omnigent]"), conversation.tag("nvim_omnigent.md:"), conversation.tag("a/b"), conversation.tag("x.y") }, { "nvim_omnigent", "nvim_omnigent", nil, nil })
+check("render prepends site", conversation.render({ { id = 1, sender_full_name = "Me", timestamp = 0, content = "[a.pdf](/user_uploads/2/a.pdf) [w](https://x.y/z)" } }, nil, "https://s.zulipchat.com")[3], "[a.pdf](https://s.zulipchat.com/user_uploads/2/a.pdf) [w](https://x.y/z)")
+check("uploads with site", require("zulip.viz").uploads("[a.pdf](https://s.zulipchat.com/user_uploads/2/a.PDF)"), { { path = "/user_uploads/2/a.PDF", ext = "pdf" } })
 check("quote", conversation.quote({ "a", "", "b" }), { "> a", ">", "> b", "" })
 check("render marks new", { conversation.render({ { id = 1, sender_full_name = "Me", timestamp = 0, content = "a" }, { id = 2, sender_full_name = "Me", timestamp = 0, content = "b" } }, 2) }, {
     { "## Me · " .. os.date("%Y-%m-%d %H:%M", 0), "", "a", "", "════════ new messages ════════", "## Me · " .. os.date("%Y-%m-%d %H:%M", 0), "", "b", "" },
