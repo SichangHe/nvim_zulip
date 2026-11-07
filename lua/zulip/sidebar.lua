@@ -195,7 +195,9 @@ function M.toggle()
     for option, value in pairs({ winfixwidth = true, number = false, relativenumber = false, cursorline = true, wrap = false }) do
         vim.wo[win][0][option] = value
     end
-    require("zulip.events").start(M.refresh)
+    require("zulip.events").start(function()
+        M.refresh()
+    end)
 end
 
 vim.api.nvim_create_autocmd("VimLeavePre", { callback = stop })

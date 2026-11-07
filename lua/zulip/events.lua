@@ -1,8 +1,8 @@
---- One event queue while the sidebar is visible; reconnects after request failures.
+--- Event queues, by default one for the sidebar while it is visible; each reconnects after request failures.
 local api = require("zulip.api")
 local config = require("zulip.config")
 local M = {}
-local current
+local sessions = {}
 
 local function release(queue_id)
     if queue_id then
@@ -10,10 +10,11 @@ local function release(queue_id)
     end
 end
 
---- Cancel the outstanding poll and retry timer; callbacks from this session become inert.
-function M.stop()
-    local session = current
-    current = nil
+--- Cancel the outstanding poll and retry timer of the queue `name` (default `main`); its callbacks become inert.
+function M.stop(name)
+    name = name or "main"
+    local session = sessions[name]
+    sessions[name] = nil
     if not session then
         return
     end
@@ -29,10 +30,14 @@ end
 
 -- 🧑 "Can it be push-based"
 --- Register before refreshing so messages arriving during the snapshot remain queued.
-function M.start(on_change)
-    M.stop()
+--- `opts` optionally has `name`, `event_types` and `narrow` of the queue; `on_change(events)` gets the
+--- non-heartbeat events, and nothing after (re)registration, which is when a snapshot should be refreshed.
+function M.start(on_change, opts)
+    opts = opts or {}
+    local name = opts.name or "main"
+    M.stop(name)
     local session = { retry_ms = config.refresh_ms }
-    current = session
+    sessions[name] = session
     local register, poll
     local function retry(err)
         release(session.queue_id)
@@ -42,7 +47,7 @@ function M.start(on_change)
             vim.notify("zulip: " .. err .. "; reconnecting", vim.log.levels.WARN)
         end
         session.timer:start(session.retry_ms, 0, vim.schedule_wrap(function()
-            if current == session then
+            if sessions[name] == session then
                 register()
             end
         end))
@@ -54,7 +59,7 @@ function M.start(on_change)
             last_event_id = session.last_event_id,
             dont_block = false,
         }, function(err, reply)
-            if current ~= session then
+            if sessions[name] ~= session then
                 return
             end
             session.poll = nil
@@ -62,33 +67,36 @@ function M.start(on_change)
                 return retry(err)
             end
             session.retry_ms = config.refresh_ms
-            local changed = false
+            local changed = {}
             for _, event in ipairs(reply.events) do
                 if event.id > session.last_event_id then
                     session.last_event_id = event.id
-                    changed = changed or event.type ~= "heartbeat"
+                    if event.type ~= "heartbeat" then
+                        changed[#changed + 1] = event
+                    end
                 end
             end
-            if changed then
-                on_change()
+            if #changed > 0 then
+                on_change(changed)
             end
             poll()
         end, session.timeout_seconds)
     end
     register = function()
         api.connect(config.zuliprc, function(err)
-            if current ~= session then
+            if sessions[name] ~= session then
                 return
             end
             if err then
                 return retry(err)
             end
             api.request("POST", "/register", {
-                event_types = { "message", "update_message_flags" },
+                event_types = opts.event_types or { "message", "update_message_flags" },
+                narrow = opts.narrow,
                 fetch_event_types = {},
                 apply_markdown = false,
             }, function(register_err, reply)
-                if current ~= session then
+                if sessions[name] ~= session then
                     return release(reply and reply.queue_id)
                 end
                 if register_err then

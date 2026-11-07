@@ -81,14 +81,14 @@ conversation.open(offline)
 check("reopening a closed thread resumes there too", vim.api.nvim_win_get_cursor(vim.fn.bufwinid(conversation.bufs[offline.key]))[1], kept_row)
 check("switch line is hidden", conversation.render({ message(1, true, "text\n[switch: Target.md]") }, nil)[3], "text")
 local target = { key = "5/target", name = "s > Target", stream_id = 5, topic = "Target" }
-local voice, rows = require("zulip.voice"), sidebar.rows
+local player, rows = require("zulip.player"), sidebar.rows
 sidebar.rows = { target }
 local received = { message(40, false, "bye\n[switch: Target.md]") }
-voice.run = {}
+player.run = {}
 conversation.switch_to(conversation.bufs[offline.key], received)
 check("switch waits for the reading", vim.api.nvim_get_current_buf(), conversation.bufs[offline.key])
-voice.run = nil
-voice.on_idle()
+player.run = nil
+player.on_idle()
 check("switch opens the task's conversation", vim.api.nvim_get_current_buf(), conversation.bufs[target.key])
 sidebar.rows = rows
 vim.cmd("bwipeout! " .. conversation.bufs[target.key])

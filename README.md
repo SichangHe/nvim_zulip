@@ -38,13 +38,22 @@ While the sidebar is visible, Zulip's event queue delivers message and read-flag
 
 ## Voice
 
-Reads messages aloud and dictates replies through the voice service (private channel `voice-relay`; the `zuliprc` must be the human's account). Needs `ffmpeg`/`ffplay` wherever the audio is played and recorded.
+Reads agent messages aloud and dictates replies through the voice service (private channel `voice-relay`; the `zuliprc` must be the human's account), like the web client. Needs `ffmpeg` and `ffplay`; on macOS `brew install ffmpeg`, and allow the terminal under System Settings, Privacy & Security, Microphone. `:ZulipVoiceCheck` tests the player, the microphone (it lists the level you spoke at) and the service.
 
-- conversation: `gs` reads the message under the cursor, `gS` the conversation from there on, `gh` or `<C-c>` stops, `gA` or `:ZulipAutoplay` toggles reading new messages from others, `gd` opens the compose buffer and starts dictating
-- compose buffer: `<C-g>` (normal or insert) starts recording and stops it; the transcript is inserted at the cursor
-- a new message from someone else ending in `[switch: TASK]` opens that task's conversation, after it is read aloud if reading
+Opening a conversation reads its unread messages from others, oldest first (`autoplay`, on by default; `gA` or `:ZulipAutoplay` toggles). Reading marks messages read forward only: a message is read once it has been spoken. The status line on the conversation window shows the state (idle, loading, playing, paused, recording, transcribing, offline), and the block being read is highlighted and followed.
 
-`<C-c>` (normal mode) or `gh` stops playback and cancels a pending switch. Defaults play with `ffplay` and record with `ffmpeg` (`avfoundation` on macOS, PulseAudio elsewhere), so on macOS `brew install ffmpeg` is enough; the first recording asks for microphone permission for the terminal. Override `voice.play_cmd` and `voice.record_cmd` to change them.
+Keys in a conversation, all behind `g`:
+
+- `gs` read from the message under the cursor, then the later messages of others; `gp` pause or resume (or continue where reading last stopped)
+- `g]` `g[` next and previous chunk, `g}` `g{` next and previous message (previous first restarts the current one); presses in quick succession add up
+- `gh` or `<C-c>` stop and cancel a pending switch
+- `gd` open the compose buffer and start dictating
+
+Dictation, in the compose buffer: `<C-g>` (normal or insert) starts and stops recording, `<Esc>` in normal mode cancels. The winbar shows `● Recording` with the time and level, then `Transcribing…`. Speech is cut at pauses and each piece appears at the cursor as it is transcribed, so the buffer is a live preview. Playback pauses while dictating. After stopping, `<CR>` sends. Missing `ffmpeg`, microphone errors and service errors show as notifications.
+
+A new message from someone else with a `[switch: TASK]` line opens that task's conversation once it has been read aloud; the line is hidden.
+
+Options are `voice` in [`config.lua`](lua/zulip/config.lua): `play_cmd` (must accept `-ss SECONDS` after the program name), `record_cmd`, `pause_ms`, `silence_rms`. On macOS the microphone is `avfoundation` device `:0` (the first one `:ZulipVoiceCheck` lists); change `:0` in `record_cmd` to pick another.
 
 If Neovim runs on a remote machine without audio, set `voice.via = { "ssh", "-p", "2222", "localhost" }` with `RemoteForward 2222 localhost:22` in the laptop's SSH config, so the audio commands run on the laptop.
 

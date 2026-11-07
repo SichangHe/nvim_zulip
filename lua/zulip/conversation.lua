@@ -4,6 +4,7 @@ local config = require("zulip.config")
 local loading, pending, retries = {}, {}, {}
 local viz = require("zulip.viz")
 local voice = require("zulip.voice")
+local player = require("zulip.player")
 
 local M = {
     --- Message buffer of each conversation key.
@@ -86,20 +87,46 @@ function M.mark_seen(buf, win)
     end
 end
 
---- Read aloud the message under the cursor of `buf`, or with `from_here` it and all after it.
-local function speak(buf, from_here)
+--- Mark read each unread message of `buf` up to `id`, as reading reaches it (forward only).
+local function mark_upto(buf, id)
     local shown = M.shown[buf]
-    local at = shown and span_at(shown.spans, vim.api.nvim_win_get_cursor(0)[1])
+    if not (config.mark_read and shown) then
+        return
+    end
+    local seen = {}
+    for _, message in ipairs(shown.messages) do
+        if message.id <= id and shown.unread[message.id] then
+            shown.unread[message.id] = nil
+            seen[#seen + 1] = message.id
+        end
+    end
+    if #seen > 0 then
+        api.request("POST", "/messages/flags", { messages = seen, op = "add", flag = "read" }, function(err)
+            if err then
+                fail(err)
+            end
+        end)
+    end
+end
+
+--- Read aloud from the message under the cursor of `buf` (`conversation`), through the later messages of others.
+--- With no cursor message given, resume where reading stopped.
+local function speak(buf, conversation, resume)
+    local shown = M.shown[buf]
+    local last = resume and player.last[conversation.key]
+    local at = shown and (last and { id = last.id } or span_at(shown.spans, vim.api.nvim_win_get_cursor(0)[1]))
     if not at then
         return fail("no message here")
     end
     local messages = {}
-    for i, span in ipairs(shown.spans) do
-        if span.id == at.id or (from_here and #messages > 0) then
-            messages[#messages + 1] = shown.messages[i]
+    for _, message in ipairs(shown.messages) do
+        if message.id == at.id or (#messages > 0 and message.sender_id ~= api.account.user_id) then
+            messages[#messages + 1] = message
         end
     end
-    voice.speak_messages(messages, from_here)
+    player.read(buf, conversation.key, messages, last and last.idx, function(id)
+        mark_upto(buf, id)
+    end)
 end
 
 --- Each of `lines` as a Markdown quote, then an empty line to write on.
@@ -155,13 +182,6 @@ function M.load(conversation)
         local messages = reply.messages
         local before = M.shown[buf]
         local newest_before = vim.b[buf].zulip_newest_id
-        if before and api.account then
-            local received = vim.tbl_filter(function(message)
-                return message.id > newest_before and message.sender_id ~= api.account.user_id
-            end, messages)
-            voice.autoplay(received)
-            M.switch_to(buf, received)
-        end
         -- 🧑 "don't scroll when new messages appear": note which message each window's cursor and top line are in.
         local views = {}
         if before then
@@ -192,6 +212,22 @@ function M.load(conversation)
         viz.show(buf)
         vim.b[buf].zulip_newest_id = #messages > 0 and messages[#messages].id or 0
         M.shown[buf] = { spans = spans, messages = messages, unread = unread_set }
+        player.refresh(buf)
+        if api.account then
+            local others = vim.tbl_filter(function(message)
+                return message.sender_id ~= api.account.user_id
+            end, messages)
+            player.autoplay(buf, conversation.key, vim.tbl_filter(function(message)
+                return unread_set[message.id]
+            end, others), function(id)
+                mark_upto(buf, id)
+            end)
+            if before then
+                M.switch_to(buf, vim.tbl_filter(function(message)
+                    return message.id > newest_before
+                end, others))
+            end
+        end
         local first_rows = {}
         for _, span in ipairs(spans) do
             first_rows[span.id] = span.first
@@ -283,13 +319,19 @@ function M.compose(conversation, quoted)
             end,
         })
         vim.keymap.set("n", "<CR>", "<Cmd>write<CR>", { buffer = buf, desc = "Send" })
+        vim.api.nvim_create_autocmd("BufWinEnter", {
+            buffer = buf,
+            callback = function()
+                voice.idle_bar(vim.api.nvim_get_current_win())
+            end,
+        })
         if config.voice.keys.dictate then
             vim.keymap.set({ "n", "i" }, config.voice.keys.dictate, function()
                 voice.dictate(buf)
             end, { buffer = buf, desc = "Zulip voice: start or stop dictating" })
         end
         if config.voice.keys.interrupt then
-            vim.keymap.set("n", config.voice.keys.interrupt, require("zulip.voice").stop, { buffer = buf, desc = "Zulip voice: stop reading aloud" })
+            vim.keymap.set("n", config.voice.keys.interrupt, player.stop, { buffer = buf, desc = "Zulip voice: stop reading aloud" })
         end
     end
     local win = vim.fn.bufwinid(buf)
@@ -345,7 +387,7 @@ function M.switch_to(buf, messages)
         return
     end
     task = vim.trim(task):gsub("%.md$", "")
-    voice.after_reading(function()
+    player.after_reading(function()
         if vim.api.nvim_win_is_valid(win) then
             vim.api.nvim_set_current_win(win)
             if not open_tag(task) then
@@ -383,13 +425,30 @@ function M.open(conversation)
             end
         end
         map(keys.speak, function()
-            speak(buf, false)
-        end, "Zulip voice: read the message aloud")
-        map(keys.speak_from, function()
-            speak(buf, true)
-        end, "Zulip voice: read the conversation aloud from here")
-        map(keys.stop, voice.stop, "Zulip voice: stop reading aloud")
-        map(keys.interrupt, voice.stop, "Zulip voice: stop reading aloud")
+            speak(buf, conversation)
+        end, "Zulip voice: read from the message under the cursor")
+        map(keys.pause, function()
+            if player.run then
+                player.toggle_pause()
+            else
+                speak(buf, conversation, true)
+            end
+        end, "Zulip voice: pause, resume, or continue where reading stopped")
+        map(keys.next_chunk, function()
+            player.step_chunk(1)
+        end, "Zulip voice: next chunk")
+        map(keys.prev_chunk, function()
+            player.step_chunk(-1)
+        end, "Zulip voice: previous chunk")
+        map(keys.next_message, function()
+            player.step_message(1)
+        end, "Zulip voice: next message")
+        map(keys.prev_message, function()
+            player.step_message(-1)
+        end, "Zulip voice: previous message (restarts the current one first)")
+        map(keys.stop, player.stop, "Zulip voice: stop reading aloud")
+        map(keys.interrupt, player.stop, "Zulip voice: stop reading aloud")
+        player.attach(buf)
         map(keys.autoplay, "<Cmd>ZulipAutoplay<CR>", "Zulip voice: toggle reading new messages aloud")
         map(keys.compose_dictate, function()
             M.compose(conversation)

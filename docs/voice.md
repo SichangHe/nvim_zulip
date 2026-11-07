@@ -4,26 +4,33 @@
 
 🧑 "We should separate out the voice services and allow the NeoVim Zulip plugin to also use it."
 🧑 "The agent switching control should also work in nvim"
+🧑 "Ideally, the experience would be similar to the web." (model: `agent_managers/zulip-voice/v2/design.md`)
 
-module `lua/zulip/voice.lua`; service protocol: `agent_managers/zulip-voice/service/protocol.md`
-- `call`: POST a JSON request to channel `voice.channel`, topic = op; poll `GET /messages` for the bot message with the same `id`
-    - then delete the request message and `ack` (and delete the ack message)
-    - the account must be the human's: the service ignores other senders
-- `tts`: `audioURL` downloaded with `curl` into memory
-- `stt`: audio uploaded with `POST /user_uploads` (`api.request` with `{ file = path }`), then `stt` with `attachment`
-- `chunks`: Lua port of `text.mjs` cleaning; one `tts` request per chunk of at most 240 characters
-    - skips the `[task]` title line, `[switch: ...]` lines and code blocks
-- reading: `speak` queues chunks; fetches the next two while one plays; `stop` kills the player and drops the queue
-- dictation: recorder writes WebM to stdout, collected in memory; `q` on its stdin stops it; then upload, `stt`, insert at cursor
-- audio location: `play_cmd` and `record_cmd` run here, or where `voice.via` says
-    - 🧑 "I run MVM on the client so that is not an issue": local is the default; `via` only for a remote nvim
-    - `<C-c>` in normal mode of conversation and compose buffers calls `stop`
-    - `via = { "ssh", "-p", "2222", "localhost" }` with a reverse tunnel runs them on the laptop; audio travels over the SSH connection through stdin and stdout
-    - arguments are shell-quoted for the remote shell
-- autoplay: `conversation.load` hands new messages from others to `voice.autoplay`
-- switch: `conversation.switch_to` follows the last `[switch: TASK]` line of new messages from others
-    - `open_tag` finds the sidebar row by topic, as `gf` does; `.md` is dropped
-    - waits for `voice.after_reading` when a reading is in progress; `stop` cancels the switch
-    - `render` hides `[switch: ...]` lines
+`lua/zulip/voice.lua`: service client and dictation; protocol `agent_managers/zulip-voice/service/protocol.md`
+- one event queue (`events.start` with `name = "voice"`, narrowed to the relay channel) delivers results and bundles
+    - `call`: POST a JSON request to topic = op; a waiter keyed by request id gets the bot's result; no polling, no deletes or acks (the service sweeps)
+    - proactive results with `bundle` are kept in `M.bundles` by message id; read back from topic `tts` after each registration
+- `tts(texts, first_idx)`: one request, several chunks, one AAC bundle with `offsetsMs`; `fetch` downloads it, minting a new link when older than 50 s
+- `stt`: `POST /user_uploads` (`api.request` with `{ file = path }`), then `stt` with `attachment`
+- `blocks`/`chunks`: Lua port of `text.mjs`; blocks keep their line range for highlighting
+- dictation: recorder writes 16 kHz 16-bit samples to stdout; `q` on stdin stops it
+    - frames of 100 ms: level by root mean square; speech piece cut after `pause_ms` of quiet or `max_piece_s`
+    - each piece becomes a WAV, uploaded and transcribed; results go in order to an extmark that follows the insertion
+    - finishes when the recorder has exited and its output is read (`settle`); `<Esc>` cancels
+    - `player.hold` pauses reading meanwhile
+- `check` (`:ZulipVoiceCheck`): plays 0.3 s of silence, records 1.5 s, pings the service
 
-tests: `tests/voice.lua` against the live service; microphone and speaker replaced by files and `ffmpeg`
+`lua/zulip/player.lua`: reading
+- run: queue of items (message, blocks, chunks); `i` item, `idx` 0-based chunk, `state`
+- a bundle plays in one `play_cmd` process started with `-ss` at the chunk's offset; a 100 ms timer maps elapsed time to the chunk for highlight and `last`
+    - next bundle (or the next message's first) is fetched while one plays; with no pre-rendered bundle one `tts` request covers up to 6 chunks
+- message end calls `mark(id)`, which marks it and earlier unread messages read (forward only)
+- `autoplay`: unread messages of others, queued once per message id; ignored while dictating
+- steps (`step_chunk`, `step_message`) move the position at once and restart after 250 ms, so quick presses add up
+- status line: winbar of conversation windows from `status_line`
+- `after_reading` runs `conversation.switch_to` once the queue ends; `stop` cancels it
+
+audio location: `play_cmd` and `record_cmd` run here, or where `voice.via` says
+- 🧑 "I run MVM on the client so that is not an issue": local is the default; `via` for a remote nvim
+
+tests: `tests/voice.lua` against the live service; speaker and microphone replaced by files and `ffmpeg`
