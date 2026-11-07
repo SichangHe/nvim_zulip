@@ -27,15 +27,16 @@ local function fail(err)
     vim.notify("zulip voice: " .. err, vim.log.levels.ERROR)
 end
 
---- Run `cmd` here, or through `config.voice.via` (e.g. `ssh` to the laptop) with each argument shell-quoted.
-function M.spawn(cmd, opts, on_exit)
-    local via = config.voice.via
-    if #via > 0 then
-        cmd = vim.list_extend(vim.deepcopy(via), { table.concat(vim.tbl_map(vim.fn.shellescape, cmd), " ") })
+local LOG_LINES = 400
+local log_ring = {}
+
+--- Remember a line of debugging text in memory; `:ZulipVoiceLog` ships them to the service.
+local function log(format, ...)
+    log_ring[#log_ring + 1] = os.date("%H:%M:%S ") .. format:format(...)
+    if #log_ring > LOG_LINES then
+        table.remove(log_ring, 1)
     end
-    return vim.system(cmd, opts, vim.schedule_wrap(on_exit))
 end
-local spawn = M.spawn
 
 --- What a speech engine should say for Markdown `text` (same cleaning as the service's `text.mjs`).
 local function speech_text(text)
@@ -223,6 +224,25 @@ local function call(op, fields, on_done)
     end)
 end
 
+--- Send the remembered debugging lines to the service's `client.log`.
+function M.send_log()
+    with_relay(fail, function()
+        call("log", { label = "nvim_zulip", text = table.concat(log_ring, "\n"):sub(-9000) }, function(err, result)
+            vim.notify(err and "zulip voice: log not sent: " .. err or ("zulip voice: sent log (%d lines, %d bytes) to the server"):format(#log_ring, result.bytes))
+        end)
+    end)
+end
+
+--- Run `cmd` here, or through `config.voice.via` (e.g. `ssh` to the laptop) with each argument shell-quoted.
+function M.spawn(cmd, opts, on_exit)
+    local via = config.voice.via
+    if #via > 0 then
+        cmd = vim.list_extend(vim.deepcopy(via), { table.concat(vim.tbl_map(vim.fn.shellescape, cmd), " ") })
+    end
+    return vim.system(cmd, opts, vim.schedule_wrap(on_exit))
+end
+local spawn = M.spawn
+
 --- Speech for `texts` (a few chunks) in one request, as a bundle starting at chunk `first_idx`; `on_done(err, bundle)`.
 function M.tts(texts, first_idx, on_done)
     with_relay(on_done, function()
@@ -381,6 +401,7 @@ local function drain(session)
             local before = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1]:sub(col, col)
             local lead = before ~= "" and not before:match("%s") and " " or ""
             vim.api.nvim_buf_set_text(buf, row, col, row, col, { lead .. text })
+            log("inserted %q at %d:%d", text, row + 1, col)
             local win = vim.fn.bufwinid(buf)
             if win ~= -1 and vim.api.nvim_get_mode().mode == "n" then
                 local end_row, end_col = unpack(vim.api.nvim_buf_get_extmark_by_id(buf, ns, session.mark, {}))
@@ -398,11 +419,14 @@ local function send_piece(session, pcm)
     session.n_sent = session.n_sent + 1
     local index, path = session.n_sent, vim.fn.tempname() .. ".wav"
     write_file(path, wav(pcm))
+    log("piece %d: %d bytes sent to speech to text", index, #pcm)
     M.stt(path, function(err, text)
         os.remove(path)
         if err then
+            log("piece %d: error %s", index, err)
             fail("speech to text: " .. err)
         end
+        log("piece %d: heard %q", index, text or "")
         session.results[index] = text or ""
         drain(session)
     end)
@@ -410,6 +434,7 @@ end
 
 --- Cut the speech heard so far into a piece and send it.
 local function cut(session)
+    log("cut: %d frames", #session.piece)
     if #session.piece > 0 then
         send_piece(session, table.concat(session.piece))
     end
@@ -420,7 +445,21 @@ end
 local function feed_frame(session, frame)
     session.level = rms(frame)
     session.n_frames = session.n_frames + 1
-    if session.level >= config.voice.silence_rms then
+    session.all[#session.all + 1] = frame
+    if session.n_frames == 1 then
+        session.floor = session.level
+    elseif session.level < session.floor then
+        session.floor = session.level
+    else
+        session.floor = session.floor + (session.level - session.floor) * 0.003
+    end
+    session.threshold = math.max(config.voice.silence_rms, 3 * session.floor)
+    session.peak = math.max(session.peak, session.level)
+    if session.n_frames % 10 == 0 then
+        log("frames=%d level=%d peak=%d floor=%d threshold=%d piece=%d", session.n_frames, session.level, session.peak, session.floor, session.threshold, #session.piece)
+        session.peak = 0
+    end
+    if session.level >= session.threshold then
         if #session.piece == 0 then
             session.piece = session.preroll
         end
@@ -467,10 +506,15 @@ local function settle(session)
         fail("recorder produced no audio (exit " .. result.code .. "): " .. vim.trim(result.stderr or "") .. MIC_HINT)
     end
     session.stopped = true
+    log("recorder exited %d after %d frames; %d bytes unparsed; stderr %q", result.code, session.n_frames, #session.rest, vim.trim(result.stderr or ""))
     if session.cancelled or session.n_frames == 0 then
         session.n_sent = session.n_done
     else
         cut(session)
+        if session.n_sent == 0 then
+            log("no speech passed the threshold; sending the whole recording")
+            send_piece(session, table.concat(session.all))
+        end
     end
     drain(session)
 end
@@ -491,10 +535,11 @@ function M.dictate(buf)
     local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
     local session = {
         buf = buf, started_ms = vim.uv.now(), level = 0, n_frames = 0, n_sent = 0, n_done = 0, next = 1,
-        results = {}, piece = {}, preroll = { "", "" }, silent_ms = 0, timer = vim.uv.new_timer(), rest = "",
+        results = {}, all = {}, floor = 0, peak = 0, threshold = 0, piece = {}, preroll = { "", "" }, silent_ms = 0, timer = vim.uv.new_timer(), rest = "",
         mark = vim.api.nvim_buf_set_extmark(buf, ns, row - 1, line == "" and 0 or math.min(col + 1, #line), { right_gravity = true }),
     }
     M.session = session
+    log("dictation starts: %s", table.concat(config.voice.record_cmd, " "))
     require("zulip.player").hold()
     session.recorder = spawn(config.voice.record_cmd, {
         stdin = true,
@@ -545,32 +590,52 @@ function M.check()
             report(false, "recorder: " .. absent)
             return service()
         end
-        local peak, n_bytes = 0, 0
+        local chunks, exit, eof = {}, nil, false
+        local function settle_check()
+            if not (exit and eof) then
+                return
+            end
+            local audio = table.concat(chunks)
+            local peak = 0
+            for at = 1, #audio - FRAME_BYTES + 1, FRAME_BYTES do
+                peak = math.max(peak, rms(audio:sub(at, at + FRAME_BYTES - 1)))
+            end
+            log("check: recorder exited %d, %d bytes, peak %d, stderr %q", exit.code, #audio, peak, vim.trim(exit.stderr or ""))
+            if #audio == 0 then
+                report(false, "recorder: no audio (exit " .. exit.code .. "): " .. vim.trim(exit.stderr or "") .. MIC_HINT)
+                return service()
+            end
+            report(true, ("recorder: %d bytes, peak level %d (above %d counts as speech)"):format(#audio, peak, config.voice.silence_rms))
+            local path = vim.fn.tempname() .. ".wav"
+            write_file(path, wav(audio))
+            M.stt(path, function(err, text)
+                os.remove(path)
+                log("check: heard %q %s", text or "", err or "")
+                report(not err, err and "speech to text: " .. err or ("speech to text heard: %q"):format(text))
+                service()
+            end)
+        end
         local proc = spawn(config.voice.record_cmd, {
             stdin = true,
             text = false,
             stdout = function(_, data)
-                if data then
-                    vim.schedule(function()
-                        n_bytes = n_bytes + #data
-                        for i = 1, #data - FRAME_BYTES + 1, FRAME_BYTES do
-                            peak = math.max(peak, rms(data:sub(i, i + FRAME_BYTES - 1)))
-                        end
-                    end)
-                end
+                vim.schedule(function()
+                    if data then
+                        chunks[#chunks + 1] = data
+                    else
+                        eof = true
+                        settle_check()
+                    end
+                end)
             end,
         }, function(result)
-            if n_bytes == 0 then
-                report(false, "recorder: no audio (exit " .. result.code .. "): " .. vim.trim(result.stderr or "") .. MIC_HINT)
-            else
-                report(true, ("recorder: %d bytes, peak level %d (speak: above %d counts as speech)"):format(n_bytes, peak, config.voice.silence_rms))
-            end
-            service()
+            exit = result
+            settle_check()
         end)
         vim.defer_fn(function()
-            proc:write("q")
-        end, 1500)
-        vim.notify("zulip voice: testing the microphone for 1.5 s; say something")
+            pcall(proc.write, proc, "q")
+        end, 4000)
+        vim.notify("zulip voice: recording 4 s; say a sentence")
     end
     local absent = missing(config.voice.play_cmd)
     if absent then

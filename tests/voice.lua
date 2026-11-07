@@ -109,12 +109,28 @@ local text = table.concat(vim.api.nvim_buf_get_lines(compose, 0, -1, false), " "
 local _, n_fox = text:gsub("quick brown fox", "")
 check("two pieces in order after the typed text", { text:find("^hello "), n_fox, text:find("liquor jugs") ~= nil }, { 1, 2, true })
 
+-- a quiet microphone like macOS emits: 48 kHz stereo float, speech below the fixed threshold, no pause before the end
+local pipe = ("ffmpeg -loglevel error -i %s -af volume=0.05 -ar 48000 -ac 2 -f f32le - | ffmpeg -loglevel error -f f32le -ar 48000 -ac 2 -i - -ac 1 -ar 16000 -f s16le -"):format(clip)
+config.voice.record_cmd = { "sh", "-c", pipe }
+vim.api.nvim_buf_set_lines(compose, 0, -1, false, { "" })
+voice.dictate(compose)
+check("quiet dictation ends", wait(function() return voice.session == nil end), true)
+text = table.concat(vim.api.nvim_buf_get_lines(compose, 0, -1, false), " "):lower()
+check("quiet speech is still transcribed", text:find("quick brown fox", 1, true) ~= nil, true)
+
+local sent
+vim.notify = function(message) sent = message end
+voice.send_log()
+check("log sent to the server", wait(function() return sent end) and sent:find("sent log", 1, true) ~= nil, true)
+vim.notify = function() end
+
 -- service check
+config.voice.record_cmd = { "sh", "-c", pipe }
 local reported
 local notify = vim.notify
 vim.notify = function(message) if message:find("service:", 1, true) then reported = message end end
 voice.check()
-check("check reports", wait(function() return reported end) and reported:find("ok    service", 1, true) ~= nil, true)
+check("check reports", wait(function() return reported end) and reported:find("ok    service", 1, true) ~= nil and reported:lower():find("quick brown fox", 1, true) ~= nil, true)
 vim.notify = notify
 print(full)
 os.exit(failures == 0 and 0 or 1)

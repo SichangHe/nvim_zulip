@@ -25,8 +25,8 @@ return {
         --- Dictation cuts speech into pieces at pauses of this many milliseconds, or at `max_piece_s` seconds.
         pause_ms = 700,
         max_piece_s = 10,
-        --- A 100 ms stretch of audio counts as speech above this root mean square level (16-bit samples).
-        silence_rms = 300,
+        --- A 100 ms stretch counts as speech above this root mean square level (16-bit samples) or 3 times the quietest recent level, whichever is higher.
+        silence_rms = 100,
         --- Prefix for `play_cmd` and `record_cmd`; empty runs them where Neovim runs.
         via = {},
         --- Plays the audio on its standard input; must accept `-ss SECONDS` right after the program name.

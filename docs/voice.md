@@ -18,7 +18,9 @@
     - each piece becomes a WAV, uploaded and transcribed; results go in order to an extmark that follows the insertion
     - finishes when the recorder has exited and its output is read (`settle`); `<Esc>` cancels
     - `player.hold` pauses reading meanwhile
-- `check` (`:ZulipVoiceCheck`): plays 0.3 s of silence, records 1.5 s, pings the service
+- speech level: threshold is the higher of `silence_rms` and 3 times a tracked quiet floor; on stop the remainder is always sent, and the whole recording when nothing passed
+- `log`: in-memory ring of 400 lines (frames, levels, cuts, uploads, transcripts, insertions); `:ZulipVoiceLog` sends it with the relay `log` op
+- `check` (`:ZulipVoiceCheck`): plays 0.3 s of silence, records 4 s, transcribes it, pings the service
 
 `lua/zulip/player.lua`: reading
 - run: queue of items (message, blocks, chunks); `i` item, `idx` 0-based chunk, `state`

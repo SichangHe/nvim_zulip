@@ -14,6 +14,7 @@ function M.setup(opts)
     local player = require("zulip.player")
     vim.api.nvim_create_user_command("ZulipStop", player.stop, {})
     vim.api.nvim_create_user_command("ZulipVoiceCheck", voice.check, {})
+    vim.api.nvim_create_user_command("ZulipVoiceLog", voice.send_log, {})
     vim.api.nvim_create_user_command("ZulipAutoplay", function()
         config.voice.autoplay = not config.voice.autoplay
         player.paint()
