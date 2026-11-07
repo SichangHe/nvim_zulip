@@ -118,7 +118,15 @@ function M.refresh()
             M.refreshing = false
             return fail(err)
         end
-        local params = { anchor = "newest", num_before = config.n_recent, num_after = 0, apply_markdown = false }
+        -- 🧑 "I am seeing a lot of these voice channels in Neo Vim Zullip, and I don't like that."
+        api.request("GET", "/users/me/subscriptions", {}, function(_, subs)
+        local narrow = {}
+        for _, sub in ipairs(subs and subs.subscriptions or {}) do
+            if sub.is_muted then
+                narrow[#narrow + 1] = { operator = "channel", operand = sub.stream_id, negated = true }
+            end
+        end
+        local params = { narrow = #narrow > 0 and narrow or nil, anchor = "newest", num_before = config.n_recent, num_after = 0, apply_markdown = false }
         api.request("GET", "/messages", params, function(get_err, reply)
             if started ~= generation then
                 return
@@ -145,6 +153,7 @@ function M.refresh()
                 M.pending = false
                 M.refresh()
             end
+        end)
         end)
     end)
 end
