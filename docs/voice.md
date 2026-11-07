@@ -15,8 +15,9 @@ module `lua/zulip/voice.lua`; service protocol: `agent_managers/zulip-voice/serv
     - skips the `[task]` title line, `[switch: ...]` lines and code blocks
 - reading: `speak` queues chunks; fetches the next two while one plays; `stop` kills the player and drops the queue
 - dictation: recorder writes WebM to stdout, collected in memory; `q` on its stdin stops it; then upload, `stt`, insert at cursor
-- audio location: `play_cmd` and `record_cmd` run where `voice.via` says
-    - nvim runs on the remote machine, which has no speakers or microphone
+- audio location: `play_cmd` and `record_cmd` run here, or where `voice.via` says
+    - 🧑 "I run MVM on the client so that is not an issue": local is the default; `via` only for a remote nvim
+    - `<C-c>` in normal mode of conversation and compose buffers calls `stop`
     - `via = { "ssh", "-p", "2222", "localhost" }` with a reverse tunnel runs them on the laptop; audio travels over the SSH connection through stdin and stdout
     - arguments are shell-quoted for the remote shell
 - autoplay: `conversation.load` hands new messages from others to `voice.autoplay`

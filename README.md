@@ -40,21 +40,13 @@ While the sidebar is visible, Zulip's event queue delivers message and read-flag
 
 Reads messages aloud and dictates replies through the voice service (private channel `voice-relay`; the `zuliprc` must be the human's account). Needs `ffmpeg`/`ffplay` wherever the audio is played and recorded.
 
-- conversation: `gs` reads the message under the cursor, `gS` the conversation from there on, `gh` stops, `gA` or `:ZulipAutoplay` toggles reading new messages from others, `gd` opens the compose buffer and starts dictating
+- conversation: `gs` reads the message under the cursor, `gS` the conversation from there on, `gh` or `<C-c>` stops, `gA` or `:ZulipAutoplay` toggles reading new messages from others, `gd` opens the compose buffer and starts dictating
 - compose buffer: `<C-g>` (normal or insert) starts recording and stops it; the transcript is inserted at the cursor
 - a new message from someone else ending in `[switch: TASK]` opens that task's conversation, after it is read aloud if reading
 
-Neovim over SSH has no speakers or microphone, so run the audio commands on the laptop through a reverse tunnel. In `~/.ssh/config` on the laptop add `RemoteForward 2222 localhost:22` for the host, enable Remote Login on macOS, install `ffmpeg` with Homebrew, then:
+`<C-c>` (normal mode) or `gh` stops playback and cancels a pending switch. Defaults play with `ffplay` and record with `ffmpeg` (`avfoundation` on macOS, PulseAudio elsewhere), so on macOS `brew install ffmpeg` is enough; the first recording asks for microphone permission for the terminal. Override `voice.play_cmd` and `voice.record_cmd` to change them.
 
-```lua
-opts = { voice = {
-    via = { "ssh", "-p", "2222", "localhost" },
-    play_cmd = { "/opt/homebrew/bin/ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-i", "-" },
-    record_cmd = { "/opt/homebrew/bin/ffmpeg", "-loglevel", "error", "-f", "avfoundation", "-i", ":0", "-ac", "1", "-ar", "16000", "-t", "120", "-c:a", "libopus", "-f", "webm", "-" },
-} }
-```
-
-Without `via`, the defaults play and record on the machine running Neovim (PulseAudio).
+If Neovim runs on a remote machine without audio, set `voice.via = { "ssh", "-p", "2222", "localhost" }` with `RemoteForward 2222 localhost:22` in the laptop's SSH config, so the audio commands run on the laptop.
 
 ## Limits
 
