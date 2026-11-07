@@ -21,6 +21,8 @@
 - speech level: threshold is the highest of `silence_rms`, 3 times a tracked quiet floor and a tenth of the decaying peak; on stop the remainder is always sent, and the whole recording when nothing passed
 - microphone: `resolve_device`; `auto` on macOS lists avfoundation devices, drops virtual ones, probes candidates for 0.5 s and caches the first with a nonzero signal; all-zero capture clears the cache and reports with the device list
 - `log`: in-memory ring of 400 lines (frames, levels, cuts, uploads, transcripts, insertions); `:ZulipVoiceLog` sends it with the relay `log` op
+- a request also reads its own topic every 2.5 s (`FALLBACK_MS`), because the event queue can lose results across reconnects; registration backfills the whole channel
+- `send_when_done` (`<CR>` while recording): flags the session, stops the recorder; `close` writes the buffer once every piece is in
 - `check` (`:ZulipVoiceCheck`): plays 0.3 s of silence, records 4 s, transcribes it, pings the service
 
 `lua/zulip/player.lua`: reading
@@ -30,6 +32,9 @@
 - message end calls `mark(id)`, which marks it and earlier unread messages read (forward only)
 - `autoplay`: unread messages of others, queued once per message id; ignored while dictating
 - steps (`step_chunk`, `step_message`) move the position at once and restart after 250 ms, so quick presses add up
+- speed: `atempo` filters (two chained above 2.0) passed with `-ss`; elapsed time scales by speed; changing it restarts the chunk
+- follow: each chunk change moves the cursor to its block when `run.following`; a `CursorMoved` not caused by the player turns it off
+- keys: `gv` + action letter, built from one table in `conversation.open`
 - status line: winbar of conversation windows from `status_line`
 - `after_reading` runs `conversation.switch_to` once the queue ends; `stop` cancels it
 

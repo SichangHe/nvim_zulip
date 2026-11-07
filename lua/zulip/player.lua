@@ -42,8 +42,12 @@ function M.status_line()
     if voice.status() == "offline" then
         parts[#parts + 1] = "offline"
     end
+    parts[#parts + 1] = ("%.1fx"):format(config.voice.speed)
+    if run then
+        parts[#parts + 1] = run.following and "follow" or "follow off"
+    end
     parts[#parts + 1] = "autoplay " .. (config.voice.autoplay and "on" or "off")
-    parts[#parts + 1] = "gs read · gp pause · g[ g] chunk · g{ g} message · gd dictate · <C-c> stop"
+    parts[#parts + 1] = config.voice.keys.prefix .. "? voice keys"
     return " " .. table.concat(parts, " · "):gsub("%%", "%%%%")
 end
 
@@ -56,9 +60,23 @@ function M.paint()
     end
 end
 
---- Mark `buf` as one whose windows show the status line.
+--- Mark `buf` as one whose windows show the status line, and stop following the audio when the cursor is moved by hand.
 function M.attach(buf)
     M.bufs[buf] = true
+    vim.api.nvim_create_autocmd("CursorMoved", {
+        buffer = buf,
+        callback = function()
+            local run = M.run
+            if run and run.buf == buf and run.following then
+                if run.expect_move then
+                    run.expect_move = false
+                else
+                    run.following = false
+                    M.paint()
+                end
+            end
+        end,
+    })
     M.paint()
 end
 
@@ -91,8 +109,9 @@ local function highlight(run, follow)
     end
     local first, last = span.first + 1 + block.first, span.first + 1 + block.last
     vim.api.nvim_buf_set_extmark(run.buf, ns, first - 1, 0, { end_row = last, end_col = 0, hl_group = "ZulipReading", hl_eol = true })
-    local win = follow and vim.fn.bufwinid(run.buf) or -1
-    if win ~= -1 then
+    local win = follow and run.following and vim.fn.bufwinid(run.buf) or -1
+    if win ~= -1 and vim.api.nvim_win_get_cursor(win)[1] ~= first then
+        run.expect_move = win == vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_cursor(win, { first, 0 })
     end
 end
@@ -199,7 +218,13 @@ local function start_process(run, item, bundle)
     local k = run.idx - bundle.firstIdx
     local offset_ms = bundle.offsetsMs[k + 1] or 0
     local started_ms = vim.uv.now()
+    local speed = config.voice.speed
     local cmd = { config.voice.play_cmd[1], "-ss", ("%.3f"):format(offset_ms / 1000) }
+    if speed ~= 1 then
+        -- `atempo` takes 0.5 to 2.0, so faster speeds chain two.
+        local filter = speed > 2 and ("atempo=2.0,atempo=%.3f"):format(speed / 2) or ("atempo=%.3f"):format(speed)
+        vim.list_extend(cmd, { "-af", filter })
+    end
     vim.list_extend(cmd, vim.list_slice(config.voice.play_cmd, 2))
     run.state = "playing"
     run.proc = voice.spawn(cmd, { stdin = bundle.bytes, text = false }, function(result)
@@ -223,7 +248,7 @@ local function start_process(run, item, bundle)
         if run.gen ~= gen then
             return
         end
-        local position_ms, at = offset_ms + vim.uv.now() - started_ms, k
+        local position_ms, at = offset_ms + (vim.uv.now() - started_ms) * speed, k
         for j, start_ms in ipairs(bundle.offsetsMs) do
             if start_ms <= position_ms then
                 at = j - 1
@@ -278,7 +303,7 @@ end
 --- from `idx` of the first one, replacing any reading; `mark(id)` is called as each message ends.
 function M.read(buf, key, messages, idx, mark)
     M.stop()
-    local run = { buf = buf, key = key, i = 1, idx = idx or 0, gen = 0, items = vim.tbl_map(item_of, messages), mark = mark }
+    local run = { buf = buf, key = key, following = config.voice.follow, i = 1, idx = idx or 0, gen = 0, items = vim.tbl_map(item_of, messages), mark = mark }
     for _, message in ipairs(messages) do
         queued[message.id] = true
     end
@@ -321,7 +346,7 @@ function M.toggle_pause()
         return vim.notify("zulip voice: nothing is playing; `gs` reads from the cursor")
     end
     if run.paused then
-        run.paused = false
+        run.paused, run.following = false, config.voice.follow
         play(run)
     else
         run.paused = true
@@ -343,6 +368,26 @@ local function restart(run)
         run.debounce = nil
         play(run)
     end))
+end
+
+--- Change the playback speed by `delta`, within 0.5 to 3.0, restarting the chunk when playing.
+function M.change_speed(delta)
+    config.voice.speed = math.min(3, math.max(0.5, math.floor((config.voice.speed + delta) * 10 + 0.5) / 10))
+    local run = M.run
+    if run and not run.paused then
+        restart(run)
+    end
+    M.paint()
+end
+
+--- Keep the spoken chunk in view, or stop doing so.
+function M.toggle_follow()
+    local run = M.run
+    if run then
+        run.following = not run.following
+        highlight(run, true)
+    end
+    M.paint()
 end
 
 --- Move `delta` (+1 or -1) chunks, across messages.

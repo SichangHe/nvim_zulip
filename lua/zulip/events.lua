@@ -30,7 +30,7 @@ end
 
 -- 🧑 "Can it be push-based"
 --- Register before refreshing so messages arriving during the snapshot remain queued.
---- `opts` optionally has `name`, `event_types` and `narrow` of the queue; `on_change(events)` gets the
+--- `opts` optionally has `name`, `event_types`, `narrow` and `on_error(err)` of the queue; `on_change(events)` gets the
 --- non-heartbeat events, and nothing after (re)registration, which is when a snapshot should be refreshed.
 function M.start(on_change, opts)
     opts = opts or {}
@@ -42,6 +42,9 @@ function M.start(on_change, opts)
     local function retry(err)
         release(session.queue_id)
         session.queue_id = nil
+        if opts.on_error then
+            opts.on_error(err)
+        end
         if not session.timer then
             session.timer = vim.uv.new_timer()
             vim.notify("zulip: " .. err .. "; reconnecting", vim.log.levels.WARN)

@@ -22,6 +22,7 @@ local MAX_TTS_CHARS = 1800
 local PREPARED_TTL_MS = 6 * 3600 * 1000
 local URL_TTL_MS = 50000
 local SPEECH_BATCH = 6
+local FALLBACK_MS = 2500
 
 local function fail(err)
     vim.notify("zulip voice: " .. err, vim.log.levels.ERROR)
@@ -121,6 +122,7 @@ local function handle(message)
         return
     end
     if waiters[body.id] then
+        log("relay result %s", body.id)
         local waiter = waiters[body.id]
         waiters[body.id] = nil
         waiter(body)
@@ -183,7 +185,8 @@ local function with_relay(on_done, then_do)
                     end
                 end
                 if not received then
-                    local narrow = { { operator = "channel", operand = M.relay_id }, { operator = "topic", operand = "tts" } }
+                    log("event queue registered")
+                    local narrow = { { operator = "channel", operand = M.relay_id } }
                     api.request("GET", "/messages", { narrow = narrow, anchor = "newest", num_before = 300, num_after = 0, apply_markdown = false }, function(_, back)
                         for _, message in ipairs(back and back.messages or {}) do
                             handle(message)
@@ -193,7 +196,14 @@ local function with_relay(on_done, then_do)
                         live()
                     end
                 end
-            end, { name = "voice", event_types = { "message" }, narrow = { { "stream", config.voice.channel } } })
+            end, {
+                name = "voice",
+                event_types = { "message" },
+                narrow = { { "stream", config.voice.channel } },
+                on_error = function(queue_err)
+                    log("event queue error: %s", queue_err)
+                end,
+            })
         end)
     end)
 end
@@ -203,10 +213,12 @@ end
 local function call(op, fields, on_done)
     n_requests = n_requests + 1
     local body = vim.tbl_extend("force", { voice = 1, op = op, id = ("nv_%d_%d"):format(os.time(), n_requests) }, fields)
-    local timer = vim.uv.new_timer()
+    local timer, fallback = vim.uv.new_timer(), vim.uv.new_timer()
     local function finish(err, result)
         timer:stop()
         timer:close()
+        fallback:stop()
+        fallback:close()
         waiters[body.id] = nil
         M.offline = err ~= nil and result == nil
         on_done(err, result)
@@ -217,6 +229,16 @@ local function call(op, fields, on_done)
     timer:start(1000 * config.voice.timeout_s, 0, vim.schedule_wrap(function()
         finish(op .. " timed out")
     end))
+    -- The event queue can lose results (a reconnect, a stalled poll), so a waiting request also reads its topic.
+    fallback:start(FALLBACK_MS, FALLBACK_MS, vim.schedule_wrap(function()
+        local narrow = { { operator = "channel", operand = M.relay_id }, { operator = "topic", operand = op } }
+        api.request("GET", "/messages", { narrow = narrow, anchor = "newest", num_before = 20, num_after = 0, apply_markdown = false }, function(_, back)
+            for _, message in ipairs(back and back.messages or {}) do
+                handle(message)
+            end
+        end)
+    end))
+    log("request %s %s", op, body.id)
     api.request("POST", "/messages", { type = "stream", to = M.relay_id, topic = op, content = vim.json.encode(body) }, function(err)
         if err and waiters[body.id] then
             finish(err)
@@ -483,7 +505,7 @@ local function paint(session)
     local seconds = math.floor((vim.uv.now() - session.started_ms) / 1000)
     if not session.stopped then
         local bar = bars[math.min(8, math.floor(session.level / 400) + 1)]
-        vim.wo[win].winbar = ("%%#ErrorMsg# ● Recording %d:%02d %s %%#Comment# <C-g> stop · <Esc> cancel"):format(math.floor(seconds / 60), seconds % 60, bar)
+        vim.wo[win].winbar = ("%%#ErrorMsg# ● Recording %d:%02d %s %%#Comment# <C-g> stop · <CR> stop and send · <Esc> cancel"):format(math.floor(seconds / 60), seconds % 60, bar)
     else
         vim.wo[win].winbar = ("%%#WarningMsg# Transcribing… (%d left)"):format(session.n_sent - session.n_done)
     end
@@ -500,9 +522,16 @@ local function close(session)
     session.timer:close()
     require("zulip.player").release()
     pcall(vim.keymap.del, "n", "<Esc>", { buffer = session.buf })
+    pcall(vim.keymap.del, "i", "<CR>", { buffer = session.buf })
     local win = vim.fn.bufwinid(session.buf)
     if win ~= -1 then
         M.idle_bar(win)
+    end
+    if session.send and not session.cancelled and vim.api.nvim_buf_is_valid(session.buf) then
+        log("sending the message")
+        vim.api.nvim_buf_call(session.buf, function()
+            vim.cmd("silent write")
+        end)
     end
 end
 
@@ -605,6 +634,14 @@ function M.stop_dictation()
     end
 end
 
+--- Stop recording, wait for every piece, then send the compose buffer once.
+function M.send_when_done()
+    if M.session then
+        M.session.send = true
+        M.stop_dictation()
+    end
+end
+
 --- Stop recording and throw away everything.
 local function cancel()
     local session = M.session
@@ -703,6 +740,7 @@ function M.record(buf, cmd)
         paint(session)
     end))
     vim.keymap.set("n", "<Esc>", cancel, { buffer = buf, desc = "Zulip voice: cancel dictation" })
+    vim.keymap.set("i", "<CR>", M.send_when_done, { buffer = buf, desc = "Zulip voice: stop dictating and send" })
 end
 
 --- Report whether the player, the recorder (with its microphone level) and the service work.

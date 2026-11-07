@@ -42,14 +42,17 @@ Reads agent messages aloud and dictates replies through the voice service (priva
 
 Opening a conversation reads its unread messages from others, oldest first (`autoplay`, on by default; `gA` or `:ZulipAutoplay` toggles). Reading marks messages read forward only: a message is read once it has been spoken. The status line on the conversation window shows the state (idle, loading, playing, paused, recording, transcribing, offline), and the block being read is highlighted and followed.
 
-Keys in a conversation, all behind `g`:
+Every voice key in a conversation starts with `gv` (a "Zulip voice" group in which-key); `gv?` lists them:
 
-- `gs` read from the message under the cursor, then the later messages of others; `gp` pause or resume (or continue where reading last stopped)
-- `g]` `g[` next and previous chunk, `g}` `g{` next and previous message (previous first restarts the current one); presses in quick succession add up
-- `gh` or `<C-c>` stop and cancel a pending switch
-- `gd` open the compose buffer and start dictating
+- `gvs` read from the message under the cursor, then the later messages of others; `gvp` pause or resume (or continue where reading last stopped)
+- `gv]` `gv[` next and previous chunk, `gv}` `gv{` next and previous message (previous first restarts the current one); presses in quick succession add up
+- `gv+` `gv-` playback speed, 0.5 to 3.0 in 0.1 steps (shown in the status line; needs a `play_cmd` that accepts `-af`, as `ffplay` does)
+- `gvf` keep the chunk being read in view (on by default; moving the cursor yourself turns it off until `gvf` or the next play)
+- `gva` autoplay, `gvh` or `<C-c>` stop and cancel a pending switch
+- `gvd` open the compose buffer and start dictating
+- `gvc` check, `gvL` send the log, `gvm` choose the microphone
 
-Dictation, in the compose buffer: `<C-g>` (normal or insert) starts and stops recording, `<Esc>` in normal mode cancels. The winbar shows `● Recording` with the time and level, then `Transcribing…`. Speech is cut at pauses and each piece appears at the cursor as it is transcribed, so the buffer is a live preview. Playback pauses while dictating. After stopping, `<CR>` sends. Stopping always sends the rest of the recording; if no speech passed the level threshold the whole recording is sent. Missing `ffmpeg`, microphone errors and service errors show as notifications.
+Dictation, in the compose buffer: `<C-g>` (normal or insert) starts and stops recording, `<Esc>` in normal mode cancels, `<CR>` while recording stops, waits for every piece and sends once. The winbar shows `● Recording` with the time and level, then `Transcribing…`. Speech is cut at pauses and each piece appears at the cursor as it is transcribed, so the buffer is a live preview. Playback pauses while dictating. Otherwise `<CR>` sends. Stopping always sends the rest of the recording; if no speech passed the level threshold the whole recording is sent. Missing `ffmpeg`, microphone errors and service errors show as notifications.
 
 A new message from someone else with a `[switch: TASK]` line opens that task's conversation once it has been read aloud; the line is hidden.
 

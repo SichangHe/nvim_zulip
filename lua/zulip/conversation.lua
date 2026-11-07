@@ -318,20 +318,26 @@ function M.compose(conversation, quoted)
                 send(buf)
             end,
         })
-        vim.keymap.set("n", "<CR>", "<Cmd>write<CR>", { buffer = buf, desc = "Send" })
+        vim.keymap.set("n", "<CR>", function()
+            if voice.session then
+                voice.send_when_done()
+            else
+                vim.cmd.write()
+            end
+        end, { buffer = buf, desc = "Send (while dictating: stop, wait for the text, then send)" })
         vim.api.nvim_create_autocmd("BufWinEnter", {
             buffer = buf,
             callback = function()
                 voice.idle_bar(vim.api.nvim_get_current_win())
             end,
         })
-        if config.voice.keys.dictate then
-            vim.keymap.set({ "n", "i" }, config.voice.keys.dictate, function()
+        if config.voice.keys.compose_dictate then
+            vim.keymap.set({ "n", "i" }, config.voice.keys.compose_dictate, function()
                 voice.dictate(buf)
             end, { buffer = buf, desc = "Zulip voice: start or stop dictating" })
         end
         if config.voice.keys.interrupt then
-            vim.keymap.set("n", config.voice.keys.interrupt, player.stop, { buffer = buf, desc = "Zulip voice: stop reading aloud" })
+            vim.keymap.set("n", config.voice.keys.interrupt, player.stop, { buffer = buf, desc = "Zulip voice: stop reading" })
         end
     end
     local win = vim.fn.bufwinid(buf)
@@ -419,41 +425,51 @@ function M.open(conversation)
         vim.keymap.set("n", "p", viz.toggle, { buffer = buf, desc = "Show or hide previews" })
         vim.keymap.set("n", "gx", viz.open, { buffer = buf, desc = "Open the upload on this line" })
         local keys = config.voice.keys
-        local function map(key, fn, desc)
-            if key then
-                vim.keymap.set("n", key, fn, { buffer = buf, desc = desc })
+        local actions = {
+            { keys.read, "read from the message under the cursor", function() speak(buf, conversation) end },
+            { keys.pause, "pause, resume, or continue where reading stopped", function()
+                if player.run then
+                    player.toggle_pause()
+                else
+                    speak(buf, conversation, true)
+                end
+            end },
+            { keys.next_chunk, "next chunk", function() player.step_chunk(1) end },
+            { keys.prev_chunk, "previous chunk", function() player.step_chunk(-1) end },
+            { keys.next_message, "next message", function() player.step_message(1) end },
+            { keys.prev_message, "previous message (restarts the current one first)", function() player.step_message(-1) end },
+            { keys.faster, "faster", function() player.change_speed(0.1) end },
+            { keys.slower, "slower", function() player.change_speed(-0.1) end },
+            { keys.follow, "toggle keeping the spoken chunk in view", player.toggle_follow },
+            { keys.autoplay, "toggle reading unread messages aloud", "<Cmd>ZulipAutoplay<CR>" },
+            { keys.dictate, "dictate a reply", function()
+                M.compose(conversation)
+                voice.dictate(M.composes[conversation.key])
+            end },
+            { keys.stop, "stop reading", player.stop },
+            { keys.check, "test player, microphone and service", voice.check },
+            { keys.log, "send the voice log to the server", voice.send_log },
+            { keys.device, "choose the microphone", function() voice.choose_device() end },
+        }
+        for _, action in ipairs(actions) do
+            if action[1] then
+                vim.keymap.set("n", keys.prefix .. action[1], action[3], { buffer = buf, desc = "Zulip voice: " .. action[2] })
             end
         end
-        map(keys.speak, function()
-            speak(buf, conversation)
-        end, "Zulip voice: read from the message under the cursor")
-        map(keys.pause, function()
-            if player.run then
-                player.toggle_pause()
-            else
-                speak(buf, conversation, true)
-            end
-        end, "Zulip voice: pause, resume, or continue where reading stopped")
-        map(keys.next_chunk, function()
-            player.step_chunk(1)
-        end, "Zulip voice: next chunk")
-        map(keys.prev_chunk, function()
-            player.step_chunk(-1)
-        end, "Zulip voice: previous chunk")
-        map(keys.next_message, function()
-            player.step_message(1)
-        end, "Zulip voice: next message")
-        map(keys.prev_message, function()
-            player.step_message(-1)
-        end, "Zulip voice: previous message (restarts the current one first)")
-        map(keys.stop, player.stop, "Zulip voice: stop reading aloud")
-        map(keys.interrupt, player.stop, "Zulip voice: stop reading aloud")
+        vim.keymap.set("n", keys.prefix .. "?", function()
+            vim.notify(table.concat(vim.tbl_map(function(action)
+                return keys.prefix .. (action[1] or "") .. "  " .. action[2]
+            end, vim.tbl_filter(function(action)
+                return action[1]
+            end, actions)), "\n"))
+        end, { buffer = buf, desc = "Zulip voice: list keys" })
+        pcall(function()
+            require("which-key").add({ { keys.prefix, group = "Zulip voice", buffer = buf } })
+        end)
+        if keys.interrupt then
+            vim.keymap.set("n", keys.interrupt, player.stop, { buffer = buf, desc = "Zulip voice: stop reading" })
+        end
         player.attach(buf)
-        map(keys.autoplay, "<Cmd>ZulipAutoplay<CR>", "Zulip voice: toggle reading new messages aloud")
-        map(keys.compose_dictate, function()
-            M.compose(conversation)
-            voice.dictate(M.composes[conversation.key])
-        end, "Zulip voice: dictate a reply")
         vim.keymap.set("n", "r", function()
             M.load(conversation)
         end, { buffer = buf, desc = "Reload" })

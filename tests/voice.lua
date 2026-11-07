@@ -69,7 +69,7 @@ local full = seconds(dir .. "/played.wav")
 
 -- the status line follows the state
 player.attach(buf)
-check("status line", player.status_line():find("Idle · autoplay on", 1, true) ~= nil, true)
+check("status line", player.status_line():find("Idle · 1.0x · autoplay on", 1, true) ~= nil, true)
 
 -- controls with a stand-in player that sleeps
 local fake = dir .. "/fakeplay"
@@ -156,6 +156,63 @@ check("silent mic is reported", wait(function() return vim.iter(errors):any(func
 vim.notify = function() end
 config.voice.record_cmd = nil
 check("named device with spaces", voice.record_cmd("MacBook Pro Microphone")[7], vim.uv.os_uname().sysname == "Darwin" and ":MacBook Pro Microphone" or "MacBook Pro Microphone")
+
+-- speed: the player gets `-af atempo`, and the status line shows it
+file = io.open(fake, "w")
+file:write("#!/bin/sh\necho \"$@\" >> " .. dir .. "/args\ncat > /dev/null\nsleep 30\n")
+file:close()
+config.voice.play_cmd = { fake }
+player.read(buf, "k", messages, 0, nil)
+check("playing at 1x", wait(function() return player.run and player.run.state == "playing" end), true)
+player.change_speed(0.5)
+player.change_speed(0.5)
+player.change_speed(0.5)
+check("speed steps", config.voice.speed, 2.5)
+check("playing at the new speed", wait(function()
+    local f = io.open(dir .. "/args")
+    local args = f and f:read("*a") or ""
+    return args:find("atempo=2.0,atempo=1.250", 1, true) ~= nil
+end), true)
+check("status shows speed", player.status_line():find("2.5x", 1, true) ~= nil, true)
+player.change_speed(-9)
+check("speed floor", config.voice.speed, 0.5)
+player.change_speed(9)
+check("speed ceiling", config.voice.speed, 3)
+config.voice.speed = 1
+player.stop()
+
+-- the event queue can lose results: stopped, requests still complete, and the log command works
+require("zulip.events").stop("voice")
+local logged
+vim.notify = function(message) logged = message end
+voice.send_log()
+check("log works without the event queue", wait(function() return logged end) and logged:find("sent log", 1, true) ~= nil, true)
+vim.notify = function() end
+
+-- a long dictation: twelve pieces in order, and <CR> stops, waits for the text and sends once
+local inputs, parts, joined = {}, {}, {}
+for i = 0, 11 do
+    vim.list_extend(inputs, { "-i", clip, "-f", "lavfi", "-t", "0.9", "-i", "anullsrc=r=16000:cl=mono" })
+    parts[#parts + 1] = ("[%d]%s[a%d];[%d]%s[s%d]"):format(2 * i, rate, i, 2 * i + 1, rate, i)
+    joined[#joined + 1] = ("[a%d][s%d]"):format(i, i)
+end
+config.voice.record_cmd = vim.list_extend(vim.list_extend({ "ffmpeg", "-loglevel", "error", "-re" }, inputs), { "-filter_complex", table.concat(parts, ";") .. ";" .. table.concat(joined) .. "concat=n=24:v=0:a=1", "-f", "s16le", "-ar", "16000", "-ac", "1", "-" })
+local outbox = vim.api.nvim_create_buf(false, false)
+vim.bo[outbox].buftype = "acwrite"
+vim.api.nvim_buf_set_name(outbox, "zulip-test-compose")
+local writes = {}
+vim.api.nvim_create_autocmd("BufWriteCmd", { buffer = outbox, callback = function()
+    writes[#writes + 1] = table.concat(vim.api.nvim_buf_get_lines(outbox, 0, -1, false), " ")
+end })
+vim.api.nvim_set_current_buf(outbox)
+voice.dictate(outbox)
+vim.wait(9000)
+voice.send_when_done()
+check("sent once after all pieces", wait(function() return #writes > 0 end) and #writes, 1)
+local _, n_fox = writes[1]:lower():gsub("quick brown fox", "")
+check("sent text has the pieces so far", n_fox >= 2, true)
+vim.wait(500)
+check("not sent twice", #writes, 1)
 
 -- service check
 config.voice.record_cmd = { "sh", "-c", pipe }

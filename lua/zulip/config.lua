@@ -36,19 +36,31 @@ return {
         device = "auto",
         --- Overrides the recording command, which must write 16 kHz mono 16-bit samples to standard output and stop on `q` on standard input.
         record_cmd = nil,
-        --- Buffer-local mappings in conversations and compose buffers; set one to `false` to skip it.
+        --- Playback speed, 0.5 to 3.0 in steps of 0.1; `play_cmd` must accept `-af` filters for speeds other than 1.
+        speed = 1.0,
+        --- Keep the chunk being read in view; moving the cursor yourself turns it off until toggled or reading restarts.
+        follow = true,
+        --- Buffer-local mappings in conversations: every voice action is `prefix` plus its key (`prefix` then `?` lists them);
+        --- `interrupt` stops reading on its own, `compose_dictate` toggles dictation in the compose buffer. Set one to `false` to skip it.
         keys = {
-            speak = "gs",
-            pause = "gp",
-            next_chunk = "g]",
-            prev_chunk = "g[",
-            next_message = "g}",
-            prev_message = "g{",
-            stop = "gh",
+            prefix = "gv",
+            read = "s",
+            pause = "p",
+            next_chunk = "]",
+            prev_chunk = "[",
+            next_message = "}",
+            prev_message = "{",
+            faster = "+",
+            slower = "-",
+            follow = "f",
+            autoplay = "a",
+            dictate = "d",
+            stop = "h",
+            check = "c",
+            log = "L",
+            device = "m",
             interrupt = "<C-c>",
-            autoplay = "gA",
-            dictate = "<C-g>",
-            compose_dictate = "gd",
+            compose_dictate = "<C-g>",
         },
     },
     sidebar_width = 40,
