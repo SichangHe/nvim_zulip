@@ -124,6 +124,39 @@ voice.send_log()
 check("log sent to the server", wait(function() return sent end) and sent:find("sent log", 1, true) ~= nil, true)
 vim.notify = function() end
 
+check("virtual devices skipped, microphone first", voice.candidates({ { index = "0", name = "BlackHole 2ch" }, { index = "1", name = "MacBook Pro Microphone" }, { index = "2", name = "ZoomAudioDevice" }, { index = "3", name = "BlackHole 64ch" }, { index = "4", name = "USB Headset" } }), { "MacBook Pro Microphone", "USB Headset" })
+-- an all-zero capture is reported, with the device list parsed from avfoundation's output
+local bin = dir .. "/bin"
+vim.fn.mkdir(bin)
+file = io.open(bin .. "/ffmpeg", "w")
+file:write([[#!/bin/sh
+cat >&2 <<'EOF'
+[AVFoundation indev @ 0x7f8] AVFoundation video devices:
+[AVFoundation indev @ 0x7f8] [0] FaceTime HD Camera
+[AVFoundation indev @ 0x7f8] AVFoundation audio devices:
+[AVFoundation indev @ 0x7f8] [0] MacBook Pro Microphone
+[AVFoundation indev @ 0x7f8] [1] Zoom Audio
+EOF
+exit 1
+]])
+file:close()
+vim.uv.fs_chmod(bin .. "/ffmpeg", 493)
+local path = vim.env.PATH
+vim.env.PATH = bin .. ":" .. path
+local listed
+voice.devices(function(err, devices) listed = devices or err end)
+vim.env.PATH = path
+check("devices parsed", wait(function() return listed end) and listed, { { index = "0", name = "MacBook Pro Microphone" }, { index = "1", name = "Zoom Audio" } })
+config.voice.record_cmd = { "ffmpeg", "-loglevel", "error", "-f", "lavfi", "-t", "2", "-i", "anullsrc=r=16000:cl=mono", "-f", "s16le", "-" }
+local errors = {}
+vim.notify = function(message) errors[#errors + 1] = message end
+voice.dictate(compose)
+check("silent dictation ends", wait(function() return voice.session == nil end), true)
+check("silent mic is reported", wait(function() return vim.iter(errors):any(function(m) return m:find("only silence", 1, true) end) end), true)
+vim.notify = function() end
+config.voice.record_cmd = nil
+check("named device with spaces", voice.record_cmd("MacBook Pro Microphone")[7], vim.uv.os_uname().sysname == "Darwin" and ":MacBook Pro Microphone" or "MacBook Pro Microphone")
+
 -- service check
 config.voice.record_cmd = { "sh", "-c", pipe }
 local reported

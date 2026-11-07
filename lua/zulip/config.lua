@@ -25,14 +25,17 @@ return {
         --- Dictation cuts speech into pieces at pauses of this many milliseconds, or at `max_piece_s` seconds.
         pause_ms = 700,
         max_piece_s = 10,
-        --- A 100 ms stretch counts as speech above this root mean square level (16-bit samples) or 3 times the quietest recent level, whichever is higher.
-        silence_rms = 100,
+        --- A 100 ms stretch counts as speech above this root mean square level (16-bit samples) , 3 times the quietest recent level, or a tenth of the recent loudest, whichever is highest.
+        silence_rms = 30,
         --- Prefix for `play_cmd` and `record_cmd`; empty runs them where Neovim runs.
         via = {},
         --- Plays the audio on its standard input; must accept `-ss SECONDS` right after the program name.
         play_cmd = { "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-i", "-" },
-        --- Writes 16 kHz mono 16-bit samples to standard output; stops on `q` on standard input. Microphone: macOS `avfoundation`, else PulseAudio.
-        record_cmd = { "ffmpeg", "-loglevel", "error", "-f", vim.uv.os_uname().sysname == "Darwin" and "avfoundation" or "pulse", "-i", vim.uv.os_uname().sysname == "Darwin" and ":0" or "default", "-ac", "1", "-ar", "16000", "-f", "s16le", "-" },
+        --- Microphone: `auto` (macOS: the first real microphone that delivers a signal, skipping BlackHole, Zoom and the like),
+        --- else an `avfoundation` device name such as `MacBook Pro Microphone`, an index, or `default`; `:ZulipVoiceDevice` lists and picks.
+        device = "auto",
+        --- Overrides the recording command, which must write 16 kHz mono 16-bit samples to standard output and stop on `q` on standard input.
+        record_cmd = nil,
         --- Buffer-local mappings in conversations and compose buffers; set one to `false` to skip it.
         keys = {
             speak = "gs",

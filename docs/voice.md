@@ -18,7 +18,8 @@
     - each piece becomes a WAV, uploaded and transcribed; results go in order to an extmark that follows the insertion
     - finishes when the recorder has exited and its output is read (`settle`); `<Esc>` cancels
     - `player.hold` pauses reading meanwhile
-- speech level: threshold is the higher of `silence_rms` and 3 times a tracked quiet floor; on stop the remainder is always sent, and the whole recording when nothing passed
+- speech level: threshold is the highest of `silence_rms`, 3 times a tracked quiet floor and a tenth of the decaying peak; on stop the remainder is always sent, and the whole recording when nothing passed
+- microphone: `resolve_device`; `auto` on macOS lists avfoundation devices, drops virtual ones, probes candidates for 0.5 s and caches the first with a nonzero signal; all-zero capture clears the cache and reports with the device list
 - `log`: in-memory ring of 400 lines (frames, levels, cuts, uploads, transcripts, insertions); `:ZulipVoiceLog` sends it with the relay `log` op
 - `check` (`:ZulipVoiceCheck`): plays 0.3 s of silence, records 4 s, transcribes it, pings the service
 

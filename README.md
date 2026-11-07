@@ -53,7 +53,7 @@ Dictation, in the compose buffer: `<C-g>` (normal or insert) starts and stops re
 
 A new message from someone else with a `[switch: TASK]` line opens that task's conversation once it has been read aloud; the line is hidden.
 
-Options are `voice` in [`config.lua`](lua/zulip/config.lua): `play_cmd` (must accept `-ss SECONDS` after the program name), `record_cmd`, `pause_ms`, `silence_rms`. On macOS the microphone is `avfoundation` device `:0` (the first one `:ZulipVoiceCheck` lists); change `:0` in `record_cmd` to pick another.
+Options are `voice` in [`config.lua`](lua/zulip/config.lua): `play_cmd` (must accept `-ss SECONDS` after the program name), `record_cmd`, `device`, `pause_ms`, `silence_rms`. On macOS `voice.device = "auto"` (default) picks the first real microphone (names with "Microphone" first; BlackHole, Zoom, Loopback and similar virtual devices are skipped) that delivers a signal, probing each for 0.5 s once. To choose by name: `voice = { device = "MacBook Pro Microphone" }`, or `:ZulipVoiceDevice` to list and pick (`:ZulipVoiceDevice NAME` sets one). A microphone that delivers only zeros is reported with the device list, and the next dictation probes again.
 
 If Neovim runs on a remote machine without audio, set `voice.via = { "ssh", "-p", "2222", "localhost" }` with `RemoteForward 2222 localhost:22` in the laptop's SSH config, so the audio commands run on the laptop.
 

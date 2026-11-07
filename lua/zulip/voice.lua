@@ -309,6 +309,133 @@ function M.status()
 end
 
 local FRAME_MS = 100
+local SILENT_MIC = "the microphone delivers only silence; on macOS grant Microphone permission to your terminal app in System Settings > Privacy & Security > Microphone and restart it, or pick another device with :ZulipVoiceDevice"
+
+--- Root mean square of the 16-bit samples in `frame`.
+local function rms(frame)
+    local samples, sum = require("ffi").cast("const int16_t*", frame), 0
+    local n = math.floor(#frame / 2)
+    for i = 0, n - 1 do
+        sum = sum + samples[i] * samples[i]
+    end
+    return math.sqrt(sum / math.max(n, 1))
+end
+
+local VIRTUAL_DEVICES = { "blackhole", "zoom", "loopback", "soundflower", "obs", "teams", "aggregate", "multi-output" }
+
+--- The command that records: `voice.record_cmd`, else `ffmpeg` on `device` (`avfoundation` on macOS, else PulseAudio).
+function M.record_cmd(device)
+    if config.voice.record_cmd then
+        return config.voice.record_cmd
+    end
+    local mac = vim.uv.os_uname().sysname == "Darwin"
+    return { "ffmpeg", "-loglevel", "error", "-f", mac and "avfoundation" or "pulse", "-i", mac and ":" .. device or device, "-ac", "1", "-ar", "16000", "-f", "s16le", "-" }
+end
+
+--- Real microphones among `devices`, those named like a microphone first; virtual devices (BlackHole, Zoom...) are left out.
+function M.candidates(devices)
+    local real = vim.tbl_filter(function(device)
+        local name = device.name:lower()
+        return not vim.iter(VIRTUAL_DEVICES):any(function(virtual)
+            return name:find(virtual, 1, true)
+        end)
+    end, devices)
+    table.sort(real, function(a, b)
+        local a_mic, b_mic = a.name:lower():find("microphone", 1, true) ~= nil, b.name:lower():find("microphone", 1, true) ~= nil
+        return a_mic and not b_mic
+    end)
+    return vim.tbl_map(function(device)
+        return device.name
+    end, real)
+end
+
+--- The audio input devices avfoundation lists as `{ index, name }`; `on_done(err, devices)`.
+function M.devices(on_done)
+    spawn({ "ffmpeg", "-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", "" }, { text = true }, function(result)
+        local devices, audio = {}, false
+        for line in (result.stderr or ""):gmatch("[^\n]+") do
+            if line:find("AVFoundation audio devices", 1, true) then
+                audio = true
+            elseif audio then
+                local index, name = line:match("%[(%d+)%]%s+(.-)%s*$")
+                if index then
+                    devices[#devices + 1] = { index = index, name = name }
+                end
+            end
+        end
+        if #devices == 0 then
+            return on_done("no audio devices listed (not macOS, or `ffmpeg` missing): " .. vim.trim(result.stderr or ""):sub(-200))
+        end
+        on_done(nil, devices)
+    end)
+end
+
+--- The microphone to record from, `on_done(device)`. `voice.device` names it, or is `auto`: on macOS
+--- the first real candidate that delivers a signal (probed for 0.5 s once), else `default`.
+function M.resolve_device(on_done)
+    local device = config.voice.device
+    if device ~= "auto" or config.voice.record_cmd or vim.uv.os_uname().sysname ~= "Darwin" then
+        return on_done(device == "auto" and "default" or device)
+    end
+    if M.auto_device then
+        return on_done(M.auto_device)
+    end
+    M.devices(function(err, devices)
+        local names = err and {} or M.candidates(devices)
+        log("microphone candidates: %s", table.concat(names, ", "))
+        local function probe(i)
+            if not names[i] then
+                M.auto_device = names[1] or "default"
+                return on_done(M.auto_device)
+            end
+            spawn({ "ffmpeg", "-loglevel", "error", "-f", "avfoundation", "-i", ":" .. names[i], "-t", "0.5", "-ac", "1", "-ar", "16000", "-f", "s16le", "-" }, { text = false }, function(result)
+                local audio, peak = result.stdout or "", 0
+                for at = 1, #audio - 3199, 3200 do
+                    peak = math.max(peak, rms(audio:sub(at, at + 3199)))
+                end
+                log("probe %q: exit %d, %d bytes, peak %d", names[i], result.code, #audio, peak)
+                if peak > 0 then
+                    M.auto_device = names[i]
+                    vim.notify("zulip voice: microphone " .. names[i])
+                    return on_done(names[i])
+                end
+                probe(i + 1)
+            end)
+        end
+        probe(1)
+    end)
+end
+
+--- Choose the microphone: `device` is an index or `default`; without it, pick from the list.
+function M.choose_device(device)
+    if device and device ~= "" then
+        config.voice.device = device
+        return vim.notify("zulip voice: microphone " .. device)
+    end
+    M.devices(function(err, devices)
+        if err then
+            return fail(err)
+        end
+        vim.ui.select(devices, { prompt = "Microphone", format_item = function(d) return d.index .. " " .. d.name end }, function(choice)
+            if choice then
+                config.voice.device = choice.index
+                vim.notify("zulip voice: microphone " .. choice.index .. " " .. choice.name)
+            end
+        end)
+    end)
+end
+
+--- Say what is wrong when the capture is all zeros, listing the devices.
+local function silent_mic()
+    M.auto_device = nil
+    M.devices(function(err, devices)
+        local names = err and "" or "; devices: " .. table.concat(vim.tbl_map(function(d)
+            return d.index .. " " .. d.name
+        end, devices), ", ")
+        log("silent microphone%s", names)
+        fail(SILENT_MIC .. names)
+    end)
+end
 local FRAME_BYTES = 16 * FRAME_MS * 2
 local ns = vim.api.nvim_create_namespace("zulip_voice")
 local darwin = vim.uv.os_uname().sysname == "Darwin"
@@ -326,16 +453,6 @@ end
 --- The 16 kHz mono 16-bit samples `pcm` as a WAV file.
 local function wav(pcm)
     return "RIFF" .. le(36 + #pcm, 4) .. "WAVEfmt " .. le(16, 4) .. le(1, 2) .. le(1, 2) .. le(16000, 4) .. le(32000, 4) .. le(2, 2) .. le(16, 2) .. "data" .. le(#pcm, 4) .. pcm
-end
-
---- Root mean square of the 16-bit samples in `frame`.
-local function rms(frame)
-    local samples, sum = require("ffi").cast("const int16_t*", frame), 0
-    local n = math.floor(#frame / 2)
-    for i = 0, n - 1 do
-        sum = sum + samples[i] * samples[i]
-    end
-    return math.sqrt(sum / math.max(n, 1))
 end
 
 local function write_file(path, bytes)
@@ -453,8 +570,10 @@ local function feed_frame(session, frame)
     else
         session.floor = session.floor + (session.level - session.floor) * 0.003
     end
-    session.threshold = math.max(config.voice.silence_rms, 3 * session.floor)
+    session.hold = math.max(session.level, session.hold * 0.995)
+    session.threshold = math.max(config.voice.silence_rms, 3 * session.floor, 0.1 * session.hold)
     session.peak = math.max(session.peak, session.level)
+    session.max_level = math.max(session.max_level, session.level)
     if session.n_frames % 10 == 0 then
         log("frames=%d level=%d peak=%d floor=%d threshold=%d piece=%d", session.n_frames, session.level, session.peak, session.floor, session.threshold, #session.piece)
         session.peak = 0
@@ -506,8 +625,15 @@ local function settle(session)
         fail("recorder produced no audio (exit " .. result.code .. "): " .. vim.trim(result.stderr or "") .. MIC_HINT)
     end
     session.stopped = true
+    if session.n_frames == 0 and result.code ~= 0 and darwin and config.voice.device == "default" and not config.voice.record_cmd then
+        config.voice.device = "0"
+        vim.notify("zulip voice: the default microphone did not open; switched to device 0, try again (:ZulipVoiceDevice picks another)", vim.log.levels.WARN)
+    end
     log("recorder exited %d after %d frames; %d bytes unparsed; stderr %q", result.code, session.n_frames, #session.rest, vim.trim(result.stderr or ""))
-    if session.cancelled or session.n_frames == 0 then
+    if session.cancelled or session.n_frames == 0 or session.max_level == 0 then
+        if session.max_level == 0 and session.n_frames > 0 and not session.cancelled then
+            silent_mic()
+        end
         session.n_sent = session.n_done
     else
         cut(session)
@@ -526,22 +652,34 @@ function M.dictate(buf)
     if M.session then
         return M.stop_dictation()
     end
-    local absent = missing(config.voice.record_cmd)
-    if absent then
-        return fail(absent)
+    if M.resolving then
+        return
     end
+    M.resolving = true
+    M.resolve_device(function(device)
+        M.resolving = false
+        local absent = missing(M.record_cmd(device))
+        if absent then
+            return fail(absent)
+        end
+        M.record(buf, M.record_cmd(device))
+    end)
+end
+
+--- Record into the compose buffer `buf` with the command `cmd`.
+function M.record(buf, cmd)
     local win = vim.fn.bufwinid(buf)
     local row, col = unpack(vim.api.nvim_win_get_cursor(win == -1 and 0 or win))
     local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
     local session = {
         buf = buf, started_ms = vim.uv.now(), level = 0, n_frames = 0, n_sent = 0, n_done = 0, next = 1,
-        results = {}, all = {}, floor = 0, peak = 0, threshold = 0, piece = {}, preroll = { "", "" }, silent_ms = 0, timer = vim.uv.new_timer(), rest = "",
+        results = {}, all = {}, max_level = 0, hold = 0, floor = 0, peak = 0, threshold = 0, piece = {}, preroll = { "", "" }, silent_ms = 0, timer = vim.uv.new_timer(), rest = "",
         mark = vim.api.nvim_buf_set_extmark(buf, ns, row - 1, line == "" and 0 or math.min(col + 1, #line), { right_gravity = true }),
     }
     M.session = session
-    log("dictation starts: %s", table.concat(config.voice.record_cmd, " "))
+    log("dictation starts: %s", table.concat(cmd, " "))
     require("zulip.player").hold()
-    session.recorder = spawn(config.voice.record_cmd, {
+    session.recorder = spawn(cmd, {
         stdin = true,
         text = false,
         stdout = function(_, data)
@@ -584,8 +722,8 @@ function M.check()
             end)
         end)
     end
-    local function recorder()
-        local absent = missing(config.voice.record_cmd)
+    local function recorder_on(device)
+        local absent = missing(M.record_cmd(device))
         if absent then
             report(false, "recorder: " .. absent)
             return service()
@@ -605,6 +743,15 @@ function M.check()
                 report(false, "recorder: no audio (exit " .. exit.code .. "): " .. vim.trim(exit.stderr or "") .. MIC_HINT)
                 return service()
             end
+            if peak == 0 then
+                report(false, "recorder: " .. SILENT_MIC)
+                return M.devices(function(err, devices)
+                    report(not err, err and "devices: " .. err or "devices: " .. table.concat(vim.tbl_map(function(d)
+                        return d.index .. " " .. d.name
+                    end, devices), ", "))
+                    service()
+                end)
+            end
             report(true, ("recorder: %d bytes, peak level %d (above %d counts as speech)"):format(#audio, peak, config.voice.silence_rms))
             local path = vim.fn.tempname() .. ".wav"
             write_file(path, wav(audio))
@@ -615,7 +762,7 @@ function M.check()
                 service()
             end)
         end
-        local proc = spawn(config.voice.record_cmd, {
+        local proc = spawn(M.record_cmd(device), {
             stdin = true,
             text = false,
             stdout = function(_, data)
@@ -635,7 +782,10 @@ function M.check()
         vim.defer_fn(function()
             pcall(proc.write, proc, "q")
         end, 4000)
-        vim.notify("zulip voice: recording 4 s; say a sentence")
+        vim.notify("zulip voice: recording 4 s from " .. device .. "; say a sentence")
+    end
+    local function recorder()
+        M.resolve_device(recorder_on)
     end
     local absent = missing(config.voice.play_cmd)
     if absent then
