@@ -171,6 +171,14 @@ check("voice keys act", calls, { "read:" .. conversation.bufs[offline.key], "rea
 for _, key in ipairs({ "v", "V", "y", "[", "]", "{", "}", "f", "d" }) do
     check("key " .. key .. " stays a motion/selection key", vim.fn.maparg(key, "n", false, true).buffer ~= 1, true)
 end
+-- the previous buffer works between conversations
+conversation.open(offline)
+conversation.open(target)
+vim.api.nvim_feedkeys(vim.keycode("<C-^>"), "x", false)
+check("Ctrl-^ returns to the previous conversation", vim.api.nvim_get_current_buf(), conversation.bufs[offline.key])
+vim.cmd("buffer #")
+check(":b# goes forth again", vim.api.nvim_get_current_buf(), conversation.bufs[target.key])
+vim.api.nvim_set_current_buf(conversation.bufs[offline.key])
 -- the key hints stay in the winbar: on open, after playback ends, and after a thread switch
 local function winbar() return vim.wo[vim.api.nvim_get_current_win()].winbar end
 check("hints in the winbar after open", winbar():find("play", 1, true) ~= nil, true)
