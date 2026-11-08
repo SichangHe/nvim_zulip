@@ -49,7 +49,6 @@ Keys in a conversation (normal mode; each has a which-key description). The buff
 - `s` `S` playback speed up and down, 0.5 to 3.0 in 0.1 steps (needs a `play_cmd` that accepts `-af`, as `ffplay` does)
 - `I` keep the chunk being read in view (on by default; moving the cursor yourself turns it off until `I` or the next play)
 - `t` search the thread list and switch (`:ZulipSwitch [name]` too; telescope or fzf-lua are used when installed as `vim.ui.select`)
-- `T` switch back to the previous conversation, Alt-Tab style (`:ZulipSwitch -` too; remembered across restarts; "pause, switch back" by voice)
 - `p` open the compose buffer and start dictating; `c` toggle hands-free voice control; `R` reload the conversation
 - rare, behind `gv`: `gva` autoplay, `gvc` check, `gvL` send the log, `gvm` choose the microphone
 

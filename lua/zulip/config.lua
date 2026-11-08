@@ -64,7 +64,6 @@ return {
             handsfree = "c",
             stop = "x",
             switch = "t",
-            back = "T",
             interrupt = "<C-c>",
             compose_dictate = "<C-g>",
             prefix = "gv",
