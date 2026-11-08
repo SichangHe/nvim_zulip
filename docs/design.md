@@ -26,7 +26,7 @@ modules in `lua/zulip/`
 - `sidebar`: owns the conversation list and its buffer
     - one `GET /messages` for the newest `n_recent` messages, grouped by `conversations`
         - snapshot after registration or relevant events gives list, order and unread counts without maintaining a second message cache
-        - unread: message without the `read` flag
+        - unread: message without the `read` flag, not sent by the account itself
     - conversation: channel topic `{ stream_id, topic }` or direct message `{ user_ids }`
         - `key`: `STREAM_ID/TOPIC` with the topic in lower case, or sorted user ids joined by `,`; unique, so buffer names start with it
     - `refreshing` serializes snapshots; `pending` retains events arriving during a snapshot for another refresh
@@ -37,7 +37,7 @@ modules in `lua/zulip/`
     - `load`: `GET /messages` narrowed by `channel` + `topic` or `dm`, `apply_markdown = false` so content is the Markdown as written
         - serialize loads per buffer and coalesce concurrent requests; a failed load retries after `refresh_ms` only if the buffer is still displayed
         - `M.shown[buf]`: each message's heading and last text row (`spans`) and the unread IDs
-        - `mark_seen` on `CursorMoved`: `POST /messages/flags` adds `read` to each unread message whose last row the cursor reached, unless `mark_read = false`
+        - `mark_seen` on `CursorMoved`: `POST /messages/flags` adds `read` to each unread message whose last row the cursor moved below, unless `mark_read = false`
         - reload keeps each window's view: cursor and top line stay on the same message at the same offset; the first load goes to the marker or the end
         - new-messages marker: a line above the first message without the `read` flag
             - `b:zulip_new_id` keeps that message across reloads, because marking read clears the flags; a later unread batch moves it

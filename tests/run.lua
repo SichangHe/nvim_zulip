@@ -18,10 +18,11 @@ local me, other = { id = 1, full_name = "Me" }, { id = 2, full_name = "Other" }
 check("conversations", sidebar.conversations({
     { id = 1, type = "stream", stream_id = 7, subject = "t", display_recipient = "s", flags = { "read" } },
     { id = 2, type = "private", display_recipient = { other, me }, flags = {} },
+    { id = 4, type = "private", sender_id = 1, display_recipient = { other, me }, flags = {} },
     { id = 3, type = "stream", stream_id = 7, subject = "t", display_recipient = "s", flags = {} },
 }, 1), {
+    { key = "1,2", name = "Other", user_ids = { 1, 2 }, newest_id = 4, n_unread = 1 },
     { key = "7/t", name = "s > t", stream_id = 7, topic = "t", newest_id = 3, n_unread = 1 },
-    { key = "1,2", name = "Other", user_ids = { 1, 2 }, newest_id = 2, n_unread = 1 },
 })
 check("tag", { conversation.tag("[nvim_omnigent]"), conversation.tag("nvim_omnigent.md:"), conversation.tag("a/b"), conversation.tag("x.y") }, { "nvim_omnigent", "nvim_omnigent", nil, nil })
 check("render prepends site", conversation.render({ { id = 1, sender_full_name = "Me", timestamp = 0, content = "[a.pdf](/user_uploads/2/a.pdf) [w](https://x.y/z)" } }, nil, "https://s.zulipchat.com")[3], "[a.pdf](https://s.zulipchat.com/user_uploads/2/a.pdf) [w](https://x.y/z)")
@@ -56,12 +57,12 @@ local obuf, owin = conversation.bufs[offline.key], vim.fn.bufwinid(conversation.
 check("first load: cursor on the new mark", vim.api.nvim_get_current_line(), "════════ new messages ════════")
 check("nothing read before the cursor reaches a message's end", flagged, {})
 local spans = conversation.shown[obuf].spans
-vim.api.nvim_win_set_cursor(owin, { spans[21].last - 1, 0 })
+vim.api.nvim_win_set_cursor(owin, { spans[21].last, 0 })
 vim.api.nvim_exec_autocmds("CursorMoved", { buffer = obuf })
-check("not read above its last line", flagged, {})
-vim.api.nvim_win_set_cursor(owin, { spans[22].last, 0 })
+check("not read while on its last line", flagged, {})
+vim.api.nvim_win_set_cursor(owin, { spans[22].last + 1, 0 })
 vim.api.nvim_exec_autocmds("CursorMoved", { buffer = obuf })
-check("read up to the message whose last line the cursor reached", flagged, { 21, 22 })
+check("read up to the message the cursor went past", flagged, { 21, 22 })
 local before_line = vim.api.nvim_get_current_line()
 local before_row = vim.api.nvim_win_get_cursor(owin)[1]
 table.remove(served, 1)

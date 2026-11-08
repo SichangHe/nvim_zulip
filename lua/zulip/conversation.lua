@@ -66,8 +66,8 @@ local function span_at(spans, row)
     return found
 end
 
--- 🧑 "Make the nvim Zulip plugin mark \"read\" only when cursor reaches the bottom of the message"
---- Mark read, when `config.mark_read`, each unread message of `buf` whose last row the cursor in `win` has reached.
+-- 🧑 "mark messages as read after cursor go pass it"
+--- Mark read, when `config.mark_read`, each unread message of `buf` whose last row the cursor in `win` has moved below.
 function M.mark_seen(buf, win)
     local shown = M.shown[buf]
     if not (config.mark_read and shown) then
@@ -75,7 +75,7 @@ function M.mark_seen(buf, win)
     end
     local row, seen = vim.api.nvim_win_get_cursor(win)[1], {}
     for _, span in ipairs(shown.spans) do
-        if span.last <= row and shown.unread[span.id] then
+        if span.last < row and shown.unread[span.id] then
             shown.unread[span.id] = nil
             seen[#seen + 1] = span.id
         end
@@ -241,8 +241,9 @@ function M.load(conversation)
             end
         end
         local unread, unread_set = {}, {}
+        -- 🧑 "Don't show messages I sent as unread"
         for _, message in ipairs(messages) do
-            if not vim.list_contains(message.flags, "read") then
+            if not vim.list_contains(message.flags, "read") and not (api.account and message.sender_id == api.account.user_id) then
                 unread[#unread + 1] = message.id
                 unread_set[message.id] = true
             end

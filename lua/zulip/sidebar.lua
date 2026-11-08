@@ -63,7 +63,8 @@ function M.conversations(messages, my_id)
             list[#list + 1] = conversation
         end
         conversation.newest_id = message.id
-        if not vim.list_contains(message.flags, "read") then
+        -- 🧑 "Don't show messages I sent as unread"
+        if not vim.list_contains(message.flags, "read") and message.sender_id ~= my_id then
             conversation.n_unread = conversation.n_unread + 1
         end
     end
