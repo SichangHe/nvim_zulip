@@ -70,6 +70,11 @@ local function groups(text)
     end, out)
 end
 
+--- Whether `line` heads a pending-item footer such as `pending item created:`; it and the bullets after it are not spoken.
+function M.is_footer_heading(line)
+    return vim.trim(line):lower():match("^pending items?%s+%w.*:$") ~= nil
+end
+
 --- The speakable blocks of a message's Markdown `content`, each `{ speech, first, last }` with
 --- its 1-based line range in `content`. The `[task]` title line, `[switch: ...]` lines and code are skipped.
 function M.blocks(content)
@@ -80,8 +85,18 @@ function M.blocks(content)
         end
         from, parts = nil, {}
     end
+    local footer = false
     for n, line in ipairs(vim.split(content, "\n")) do
-        if line:match("^%s*```") then
+        if footer and vim.trim(line) ~= "" and not line:match("^%s*[-*]%s+") and not M.is_footer_heading(line) then
+            footer = false
+        end
+        if M.is_footer_heading(line) then
+            flush()
+            footer = true
+        elseif footer and line:match("^%s*[-*]%s+") then
+            flush()
+        elseif line:match("^%s*```") then
+            footer = false
             flush()
             in_code = not in_code
         elseif in_code or line:match("^%[switch: .+%]$") or (n == 1 and line:match("^%[[^%]]+%]")) then

@@ -49,6 +49,23 @@ function M.render(messages, new_id, site)
     return lines, new_row, spans
 end
 
+--- Dim the pending-item footers (`pending item created:` and their bullets) with the `Comment` highlight.
+function M.dim_footers(buf, lines)
+    local ns = vim.api.nvim_create_namespace("zulip_footers")
+    vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+    local footer = false
+    for row, line in ipairs(lines) do
+        if voice.is_footer_heading(line) then
+            footer = true
+        elseif footer and vim.trim(line) ~= "" and not line:match("^%s*[-*]%s+") then
+            footer = false
+        end
+        if footer and vim.trim(line) ~= "" then
+            vim.api.nvim_buf_set_extmark(buf, ns, row - 1, 0, { end_row = row, hl_group = "Comment", hl_eol = true })
+        end
+    end
+end
+
 --- The span in `spans` holding `row`, or the last one starting above it.
 -- 🧑 "remember the last cursor position in each thread and resume there after reentering the thread"
 --- Per conversation key, where the cursor and top line were when the thread was left, by message.
@@ -256,6 +273,7 @@ function M.load(conversation)
         vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
         vim.bo[buf].modifiable = false
         viz.show(buf)
+        M.dim_footers(buf, lines)
         vim.b[buf].zulip_newest_id = #messages > 0 and messages[#messages].id or 0
         M.shown[buf] = { spans = spans, messages = messages, unread = unread_set }
         player.refresh(buf)

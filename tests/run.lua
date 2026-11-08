@@ -179,6 +179,13 @@ check("Ctrl-^ returns to the previous conversation", vim.api.nvim_get_current_bu
 vim.cmd("buffer #")
 check(":b# goes forth again", vim.api.nvim_get_current_buf(), conversation.bufs[target.key])
 vim.api.nvim_set_current_buf(conversation.bufs[offline.key])
+-- footers show, dimmed
+local dim_buf = vim.api.nvim_create_buf(false, true)
+local dim_lines = { "Done.", "", "pending item created:", "- Fix it", "", "After." }
+vim.api.nvim_buf_set_lines(dim_buf, 0, -1, false, dim_lines)
+conversation.dim_footers(dim_buf, dim_lines)
+local marks = vim.api.nvim_buf_get_extmarks(dim_buf, vim.api.nvim_create_namespace("zulip_footers"), 0, -1, {})
+check("footer lines dimmed, others not", vim.tbl_map(function(m) return m[2] end, marks), { 2, 3 })
 -- the key hints stay in the winbar: on open, after playback ends, and after a thread switch
 local function winbar() return vim.wo[vim.api.nvim_get_current_win()].winbar end
 check("hints in the winbar after open", winbar():find("play", 1, true) ~= nil, true)

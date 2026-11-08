@@ -16,6 +16,9 @@ end
 
 local blocks = voice.blocks("[task] Title\nFirst **bold** `code` see [a link](http://x.y).\n\n```\nskipped\n```\n- item_one here\n[switch: other]")
 check("blocks skip title, switch lines and code", vim.tbl_map(function(b) return { b.speech, b.first, b.last } end, blocks), { { "First bold code see a link.", 2, 2 }, { "item one here", 7, 7 } })
+local with_footer = "Done the work.\n\npending item created:\n- Fix the thing\n- Another thing\n\nSee you."
+check("pending-item footers are not read", vim.tbl_map(function(b) return b.speech end, voice.blocks(with_footer)), { "Done the work.", "See you." })
+check("footer headings", { voice.is_footer_heading("pending items resolved:"), voice.is_footer_heading("Pending item deleted:"), voice.is_footer_heading("pending thing") }, { true, true, false })
 check("long paragraph splits", #voice.chunks(voice.blocks(("Word word word. "):rep(40))), 3)
 
 if not vim.env.ZULIPRC then
