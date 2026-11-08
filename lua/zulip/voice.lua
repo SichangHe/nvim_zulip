@@ -14,6 +14,10 @@ local M = {
     offline = false,
     --- Pre-rendered speech bundles by message id, each `{ firstIdx, texts, offsetsMs, uri, audioURL, arrived_ms }`.
     bundles = {},
+    --- The hands-free listener's session, or `nil`.
+    listener = nil,
+    --- Frames before this time count as silence, so our own earcons are not heard as speech.
+    mute_until_ms = 0,
 }
 local n_requests = 0
 local waiters, ready = {}, nil
@@ -22,7 +26,7 @@ local MAX_TTS_CHARS = 1800
 local PREPARED_TTL_MS = 6 * 3600 * 1000
 local URL_TTL_MS = 50000
 local SPEECH_BATCH = 6
-local FALLBACK_MS = 2500
+local FALLBACK_MS = 3000
 
 local function fail(err)
     vim.notify("zulip voice: " .. err, vim.log.levels.ERROR)
@@ -208,17 +212,38 @@ local function with_relay(on_done, then_do)
     end)
 end
 
+--- While any request waits, read the relay channel every `FALLBACK_MS` (one shared request): the
+--- event queue can lose results across reconnects or stalled polls.
+function M.watch()
+    if M.watching then
+        return
+    end
+    M.watching = vim.uv.new_timer()
+    M.watching:start(FALLBACK_MS, FALLBACK_MS, vim.schedule_wrap(function()
+        if next(waiters) == nil then
+            M.watching:stop()
+            M.watching:close()
+            M.watching = nil
+            return
+        end
+        local narrow = { { operator = "channel", operand = M.relay_id } }
+        api.request("GET", "/messages", { narrow = narrow, anchor = "newest", num_before = 50, num_after = 0, apply_markdown = false }, function(_, back)
+            for _, message in ipairs(back and back.messages or {}) do
+                handle(message)
+            end
+        end)
+    end))
+end
+
 --- Post a request for `op` with `fields` and wait for its result; `on_done(err, result)`.
 --- The service removes requests and results itself.
 local function call(op, fields, on_done)
     n_requests = n_requests + 1
     local body = vim.tbl_extend("force", { voice = 1, op = op, id = ("nv_%d_%d"):format(os.time(), n_requests) }, fields)
-    local timer, fallback = vim.uv.new_timer(), vim.uv.new_timer()
+    local timer = vim.uv.new_timer()
     local function finish(err, result)
         timer:stop()
         timer:close()
-        fallback:stop()
-        fallback:close()
         waiters[body.id] = nil
         M.offline = err ~= nil and result == nil
         on_done(err, result)
@@ -229,15 +254,7 @@ local function call(op, fields, on_done)
     timer:start(1000 * config.voice.timeout_s, 0, vim.schedule_wrap(function()
         finish(op .. " timed out")
     end))
-    -- The event queue can lose results (a reconnect, a stalled poll), so a waiting request also reads its topic.
-    fallback:start(FALLBACK_MS, FALLBACK_MS, vim.schedule_wrap(function()
-        local narrow = { { operator = "channel", operand = M.relay_id }, { operator = "topic", operand = op } }
-        api.request("GET", "/messages", { narrow = narrow, anchor = "newest", num_before = 20, num_after = 0, apply_markdown = false }, function(_, back)
-            for _, message in ipairs(back and back.messages or {}) do
-                handle(message)
-            end
-        end)
-    end))
+    M.watch()
     log("request %s %s", op, body.id)
     api.request("POST", "/messages", { type = "stream", to = M.relay_id, topic = op, content = vim.json.encode(body) }, function(err)
         if err and waiters[body.id] then
@@ -331,6 +348,7 @@ function M.status()
 end
 
 local FRAME_MS = 100
+local PREROLL_FRAMES = 12
 local SILENT_MIC = "the microphone delivers only silence; on macOS grant Microphone permission to your terminal app in System Settings > Privacy & Security > Microphone and restart it, or pick another device with :ZulipVoiceDevice"
 
 --- Root mean square of the 16-bit samples in `frame`.
@@ -497,7 +515,7 @@ end
 
 --- Show the dictation state of `session` in the winbar of its compose window.
 local function paint(session)
-    local win = vim.fn.bufwinid(session.buf)
+    local win = session.buf and vim.fn.bufwinid(session.buf) or -1
     if win == -1 then
         return
     end
@@ -517,9 +535,13 @@ local function close(session)
         return
     end
     session.closed = true
-    M.session = nil
     session.timer:stop()
     session.timer:close()
+    if session.on_text then
+        M.listener = nil
+        return
+    end
+    M.session = nil
     require("zulip.player").release()
     pcall(vim.keymap.del, "n", "<Esc>", { buffer = session.buf })
     pcall(vim.keymap.del, "i", "<CR>", { buffer = session.buf })
@@ -542,7 +564,11 @@ local function drain(session)
         session.results[session.next] = nil
         session.next, session.n_done = session.next + 1, session.n_done + 1
         local buf = session.buf
-        if text ~= "" and not session.cancelled and vim.api.nvim_buf_is_valid(buf) then
+        if session.on_text then
+            if text ~= "" and not session.cancelled then
+                session.on_text(text)
+            end
+        elseif text ~= "" and not session.cancelled and vim.api.nvim_buf_is_valid(buf) then
             local row, col = unpack(vim.api.nvim_buf_get_extmark_by_id(buf, ns, session.mark, {}))
             local before = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1]:sub(col, col)
             local lead = before ~= "" and not before:match("%s") and " " or ""
@@ -589,7 +615,7 @@ end
 
 --- Take one `FRAME_MS` frame of audio: track level, and cut a piece at a pause or at `max_piece_s`.
 local function feed_frame(session, frame)
-    session.level = rms(frame)
+    session.level = vim.uv.now() < M.mute_until_ms and 0 or rms(frame)
     session.n_frames = session.n_frames + 1
     session.all[#session.all + 1] = frame
     if session.n_frames == 1 then
@@ -609,7 +635,7 @@ local function feed_frame(session, frame)
     end
     if session.level >= session.threshold then
         if #session.piece == 0 then
-            session.piece = session.preroll
+            session.piece, session.preroll = session.preroll, {}
         end
         session.silent_ms = 0
         session.piece[#session.piece + 1] = frame
@@ -620,7 +646,10 @@ local function feed_frame(session, frame)
             cut(session)
         end
     else
-        session.preroll = { session.preroll[#session.preroll], frame }
+        session.preroll[#session.preroll + 1] = frame
+        if #session.preroll > PREROLL_FRAMES then
+            table.remove(session.preroll, 1)
+        end
     end
     if #session.piece * FRAME_MS >= config.voice.max_piece_s * 1000 then
         cut(session)
@@ -703,19 +732,27 @@ function M.dictate(buf)
     end)
 end
 
---- Record into the compose buffer `buf` with the command `cmd`.
-function M.record(buf, cmd)
-    local win = vim.fn.bufwinid(buf)
-    local row, col = unpack(vim.api.nvim_win_get_cursor(win == -1 and 0 or win))
-    local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
+--- Record with the command `cmd`: into the compose buffer `buf`, or with `on_text(text)` (and no buffer)
+--- hand each transcribed piece to the callback, as the hands-free listener does.
+function M.record(buf, cmd, on_text)
+    local row, col, line = 1, 0, ""
+    if buf then
+        local win = vim.fn.bufwinid(buf)
+        row, col = unpack(vim.api.nvim_win_get_cursor(win == -1 and 0 or win))
+        line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
+    end
     local session = {
-        buf = buf, started_ms = vim.uv.now(), level = 0, n_frames = 0, n_sent = 0, n_done = 0, next = 1,
-        results = {}, all = {}, max_level = 0, hold = 0, floor = 0, peak = 0, threshold = 0, piece = {}, preroll = { "", "" }, silent_ms = 0, timer = vim.uv.new_timer(), rest = "",
-        mark = vim.api.nvim_buf_set_extmark(buf, ns, row - 1, line == "" and 0 or math.min(col + 1, #line), { right_gravity = true }),
+        buf = buf, on_text = on_text, started_ms = vim.uv.now(), level = 0, n_frames = 0, n_sent = 0, n_done = 0, next = 1,
+        results = {}, all = {}, max_level = 0, hold = 0, floor = 0, peak = 0, threshold = 0, piece = {}, preroll = {}, silent_ms = 0, timer = vim.uv.new_timer(), rest = "",
+        mark = buf and vim.api.nvim_buf_set_extmark(buf, ns, row - 1, line == "" and 0 or math.min(col + 1, #line), { right_gravity = true }),
     }
-    M.session = session
-    log("dictation starts: %s", table.concat(cmd, " "))
-    require("zulip.player").hold()
+    if on_text then
+        M.listener = session
+    else
+        M.session = session
+        require("zulip.player").hold()
+    end
+    log("%s starts: %s", on_text and "listening" or "dictation", table.concat(cmd, " "))
     session.recorder = spawn(cmd, {
         stdin = true,
         text = false,
@@ -739,8 +776,49 @@ function M.record(buf, cmd)
     session.timer:start(0, 200, vim.schedule_wrap(function()
         paint(session)
     end))
+    if on_text then
+        return session
+    end
     vim.keymap.set("n", "<Esc>", cancel, { buffer = buf, desc = "Zulip voice: cancel dictation" })
     vim.keymap.set("i", "<CR>", M.send_when_done, { buffer = buf, desc = "Zulip voice: stop dictating and send" })
+end
+
+--- Play a short tone sequence: `ready`, `done` or `error`; the microphone ignores it meanwhile.
+function M.earcon(kind)
+    local notes = ({ ready = { 660, 880 }, done = { 880, 660 }, error = { 220, 220 } })[kind]
+    local pcm, rate, note_s = {}, 16000, 0.14
+    for _, hz in ipairs(notes) do
+        for i = 0, rate * note_s - 1 do
+            local edge = math.min(1, i / 160, (rate * note_s - i) / 160)
+            pcm[#pcm + 1] = le(math.floor(26000 * edge * math.sin(2 * math.pi * hz * i / rate)) % 65536, 2)
+        end
+    end
+    M.mute_until_ms = vim.uv.now() + #notes * note_s * 1000 + 250
+    spawn(config.voice.play_cmd, { stdin = wav(table.concat(pcm)), text = false }, function() end)
+end
+
+--- Start the hands-free listener: `on_text(text)` gets each transcribed piece; `on_done(err)` once it is recording or failed.
+function M.listen(on_text, on_done)
+    if M.listener or M.resolving then
+        return on_done()
+    end
+    M.resolving = true
+    M.resolve_device(function(device)
+        M.resolving = false
+        local absent = missing(M.record_cmd(device))
+        if absent then
+            return on_done(absent)
+        end
+        M.record(nil, M.record_cmd(device), on_text)
+        on_done()
+    end)
+end
+
+--- Stop the hands-free listener.
+function M.unlisten()
+    if M.listener and not M.listener.stopped then
+        M.listener.recorder:write("q")
+    end
 end
 
 --- Report whether the player, the recorder (with its microphone level) and the service work.

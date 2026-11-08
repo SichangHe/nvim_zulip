@@ -21,7 +21,7 @@
 - speech level: threshold is the highest of `silence_rms`, 3 times a tracked quiet floor and a tenth of the decaying peak; on stop the remainder is always sent, and the whole recording when nothing passed
 - microphone: `resolve_device`; `auto` on macOS lists avfoundation devices, drops virtual ones, probes candidates for 0.5 s and caches the first with a nonzero signal; all-zero capture clears the cache and reports with the device list
 - `log`: in-memory ring of 400 lines (frames, levels, cuts, uploads, transcripts, insertions); `:ZulipVoiceLog` sends it with the relay `log` op
-- a request also reads its own topic every 2.5 s (`FALLBACK_MS`), because the event queue can lose results across reconnects; registration backfills the whole channel
+- a request also while any request waits, one shared read of the relay channel every 3 s (`FALLBACK_MS`), because the event queue can lose results across reconnects; registration backfills the whole channel
 - `send_when_done` (`<CR>` while recording): flags the session, stops the recorder; `close` writes the buffer once every piece is in
 - `check` (`:ZulipVoiceCheck`): plays 0.3 s of silence, records 4 s, transcribes it, pings the service
 
@@ -34,7 +34,7 @@
 - steps (`step_chunk`, `step_message`) move the position at once and restart after 250 ms, so quick presses add up
 - speed: `atempo` filters (two chained above 2.0) passed with `-ss`; elapsed time scales by speed; changing it restarts the chunk
 - follow: each chunk change moves the cursor to its block when `run.following`; a `CursorMoved` not caused by the player turns it off
-- keys: `gv` + action letter, built from one table in `conversation.open`
+- keys: one table in `conversation.open`; frequent actions are single normal-mode keys, rare ones `gv` + letter; compose buffers only get `<C-g>` (normal), `<C-c>`, and `<CR>`/`<Esc>` while recording
 - status line: winbar of conversation windows from `status_line`
 - `after_reading` runs `conversation.switch_to` once the queue ends; `stop` cancels it
 
@@ -42,3 +42,12 @@ audio location: `play_cmd` and `record_cmd` run here, or where `voice.via` says
 - 🧑 "I run MVM on the client so that is not an issue": local is the default; `via` for a remote nvim
 
 tests: `tests/voice.lua` against the live service; speaker and microphone replaced by files and `ffmpeg`
+
+`lua/zulip/handsfree.lua`: voice control, ported from the web client (`v2/app.mjs` voice-control section)
+- `voice.listen` runs the recorder with `on_text` instead of a buffer; the same level tracking and pause cuts, 1.2 s preroll ring
+- `heard`: no reply open: `after_start_word` (fuzzy, aliases) opens one, else the piece is ignored
+    - open: pauses `player`, ready earcon, reads `next`/`back` as skips, else types the rest into the compose buffer
+    - each piece appends; `strip_end_word` found: send after 1 s of quiet, else after `long_silence_s`; empty: close after `empty_s`
+    - send writes the compose buffer, done earcon, resumes the player if the reply paused it
+- `voice.earcon`: tones played through `play_cmd`; frames count as silence while it sounds (`mute_until_ms`)
+- reading: pause keeps `resume_ms` (position in the bundle); skipping forward marks the left message read; `play` from the cursor marks earlier messages read

@@ -42,6 +42,10 @@ function M.status_line()
     if voice.status() == "offline" then
         parts[#parts + 1] = "offline"
     end
+    local control = require("zulip.handsfree").label()
+    if control then
+        parts[#parts + 1] = control
+    end
     parts[#parts + 1] = ("%.1fx"):format(config.voice.speed)
     if run then
         parts[#parts + 1] = run.following and "follow" or "follow off"
@@ -216,7 +220,8 @@ end
 local function start_process(run, item, bundle)
     local gen = run.gen
     local k = run.idx - bundle.firstIdx
-    local offset_ms = bundle.offsetsMs[k + 1] or 0
+    local offset_ms = run.resume_ms or bundle.offsetsMs[k + 1] or 0
+    run.resume_ms = nil
     local started_ms = vim.uv.now()
     local speed = config.voice.speed
     local cmd = { config.voice.play_cmd[1], "-ss", ("%.3f"):format(offset_ms / 1000) }
@@ -249,6 +254,7 @@ local function start_process(run, item, bundle)
             return
         end
         local position_ms, at = offset_ms + (vim.uv.now() - started_ms) * speed, k
+        run.position_ms = position_ms
         for j, start_ms in ipairs(bundle.offsetsMs) do
             if start_ms <= position_ms then
                 at = j - 1
@@ -350,6 +356,7 @@ function M.toggle_pause()
         play(run)
     else
         run.paused = true
+        run.resume_ms = run.state == "playing" and run.position_ms or nil
         halt(run)
         run.state = "paused"
         M.paint()
@@ -359,6 +366,7 @@ end
 --- Restart playing soon at the current position; repeated moves within the delay add up.
 local function restart(run)
     halt(run)
+    run.resume_ms = nil
     run.paused, run.state = false, "loading"
     highlight(run, true)
     M.paint()
@@ -418,6 +426,9 @@ function M.step_message(delta)
         return
     end
     if delta > 0 and run.items[run.i + 1] then
+        if run.mark then
+            run.mark(run.items[run.i].message.id)
+        end
         run.i, run.idx = run.i + 1, 0
     elseif delta < 0 then
         run.i, run.idx = run.idx > 0 and run.i or math.max(run.i - 1, 1), 0

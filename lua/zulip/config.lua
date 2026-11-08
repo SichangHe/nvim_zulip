@@ -36,16 +36,21 @@ return {
         device = "auto",
         --- Overrides the recording command, which must write 16 kHz mono 16-bit samples to standard output and stop on `q` on standard input.
         record_cmd = nil,
+        --- Hands-free voice control: say `start_word` to pause and open a reply, finish with `end_word` (or
+        --- `long_silence_s` of silence) to send it and resume; a pause with nothing said resumes after `empty_s`.
+        start_word = "pause",
+        end_word = "over",
+        long_silence_s = 6,
+        empty_s = 8,
         --- Playback speed, 0.5 to 3.0 in steps of 0.1; `play_cmd` must accept `-af` filters for speeds other than 1.
         speed = 1.0,
         --- Keep the chunk being read in view; moving the cursor yourself turns it off until toggled or reading restarts.
         follow = true,
-        --- Buffer-local mappings in conversations: every voice action is `prefix` plus its key (`prefix` then `?` lists them);
-        --- `interrupt` stops reading on its own, `compose_dictate` toggles dictation in the compose buffer. Set one to `false` to skip it.
+        --- Buffer-local mappings (normal mode) in conversations; `false` skips one. Frequent actions are single keys;
+        --- rare ones are `prefix` plus a key (`prefix` then `?` lists them). `interrupt` stops reading in conversation and compose buffers;
+        --- `compose_dictate` toggles dictation in the compose buffer.
         keys = {
-            prefix = "gv",
-            read = "s",
-            pause = "p",
+            play = "<Space>",
             next_chunk = "]",
             prev_chunk = "[",
             next_message = "}",
@@ -53,14 +58,15 @@ return {
             faster = "+",
             slower = "-",
             follow = "f",
-            autoplay = "a",
             dictate = "d",
-            stop = "h",
+            handsfree = "v",
+            interrupt = "<C-c>",
+            compose_dictate = "<C-g>",
+            prefix = "gv",
+            autoplay = "a",
             check = "c",
             log = "L",
             device = "m",
-            interrupt = "<C-c>",
-            compose_dictate = "<C-g>",
         },
     },
     sidebar_width = 40,

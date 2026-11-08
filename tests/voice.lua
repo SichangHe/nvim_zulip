@@ -214,6 +214,38 @@ check("sent text has the pieces so far", n_fox >= 2, true)
 vim.wait(500)
 check("not sent twice", #writes, 1)
 
+-- hands-free voice control
+local handsfree = require("zulip.handsfree")
+check("start word", { handsfree.after_start_word("Pause, hello there"), handsfree.after_start_word("paws"), handsfree.after_start_word("hello pause") }, { "hello there", "", nil })
+check("end word", { handsfree.strip_end_word("my reply over"), handsfree.strip_end_word("my reply over and out"), handsfree.strip_end_word("over over"), handsfree.strip_end_word("no end") }, { "my reply", "my reply", "", nil })
+config.voice.play_cmd = { "sh", "-c", "cat > /dev/null" }
+local spoken_reply
+voice.tts({ "Pause. This is my spoken reply. Over." }, 0, function(err, got) spoken_reply = got or err end)
+wait(function() return spoken_reply end)
+voice.fetch(spoken_reply, function() end)
+wait(function() return spoken_reply.bytes end)
+local reply_clip = dir .. "/reply.m4a"
+file = io.open(reply_clip, "wb")
+file:write(spoken_reply.bytes)
+file:close()
+config.voice.record_cmd = { "ffmpeg", "-loglevel", "error", "-re", "-f", "lavfi", "-t", "1", "-i", "anullsrc=r=16000:cl=mono", "-i", reply_clip, "-f", "lavfi", "-t", "8", "-i", "anullsrc=r=16000:cl=mono",
+    "-filter_complex", ("[0]%s[s];[1]%s[c];[2]%s[t];[s][c][t]concat=n=3:v=0:a=1"):format(rate, rate, rate), "-f", "s16le", "-ar", "16000", "-ac", "1", "-" }
+local sent_replies = {}
+local reply_buf = vim.api.nvim_create_buf(false, false)
+vim.bo[reply_buf].buftype = "acwrite"
+vim.api.nvim_buf_set_name(reply_buf, "zulip-test-handsfree")
+vim.api.nvim_create_autocmd("BufWriteCmd", { buffer = reply_buf, callback = function()
+    sent_replies[#sent_replies + 1] = table.concat(vim.api.nvim_buf_get_lines(reply_buf, 0, -1, false), " ")
+end })
+handsfree.toggle({ compose = function() return reply_buf end })
+check("voice control on", wait(function() return handsfree.on end), true)
+check("reply sent after the end word and silence", wait(function() return #sent_replies > 0 end), true)
+local sent_text = (sent_replies[1] or ""):lower()
+check("reply is the dictation without start and end words", { sent_text:find("spoken reply", 1, true) ~= nil, sent_text:find("over", 1, true), sent_text:find("^pause")  }, { true, nil, nil })
+handsfree.toggle()
+check("voice control off", handsfree.on, false)
+check("listener released", wait(function() return voice.listener == nil end), true)
+
 -- service check
 config.voice.record_cmd = { "sh", "-c", pipe }
 local reported

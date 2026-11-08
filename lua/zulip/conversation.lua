@@ -110,11 +110,10 @@ local function mark_upto(buf, id)
 end
 
 --- Read aloud from the message under the cursor of `buf` (`conversation`), through the later messages of others.
---- With no cursor message given, resume where reading stopped.
-local function speak(buf, conversation, resume)
+--- Earlier unread messages count as read: reading only moves forward.
+local function speak(buf, conversation)
     local shown = M.shown[buf]
-    local last = resume and player.last[conversation.key]
-    local at = shown and (last and { id = last.id } or span_at(shown.spans, vim.api.nvim_win_get_cursor(0)[1]))
+    local at = shown and span_at(shown.spans, vim.api.nvim_win_get_cursor(0)[1])
     if not at then
         return fail("no message here")
     end
@@ -124,7 +123,8 @@ local function speak(buf, conversation, resume)
             messages[#messages + 1] = message
         end
     end
-    player.read(buf, conversation.key, messages, last and last.idx, function(id)
+    mark_upto(buf, at.id - 1)
+    player.read(buf, conversation.key, messages, 0, function(id)
         mark_upto(buf, id)
     end)
 end
@@ -332,7 +332,7 @@ function M.compose(conversation, quoted)
             end,
         })
         if config.voice.keys.compose_dictate then
-            vim.keymap.set({ "n", "i" }, config.voice.keys.compose_dictate, function()
+            vim.keymap.set("n", config.voice.keys.compose_dictate, function()
                 voice.dictate(buf)
             end, { buffer = buf, desc = "Zulip voice: start or stop dictating" })
         end
@@ -425,13 +425,19 @@ function M.open(conversation)
         vim.keymap.set("n", "p", viz.toggle, { buffer = buf, desc = "Show or hide previews" })
         vim.keymap.set("n", "gx", viz.open, { buffer = buf, desc = "Open the upload on this line" })
         local keys = config.voice.keys
+        local handsfree_ctx = {
+            compose = function()
+                M.compose(conversation)
+                return M.composes[conversation.key]
+            end,
+        }
+        -- Frequent actions are single keys; rare ones sit behind `prefix`.
         local actions = {
-            { keys.read, "read from the message under the cursor", function() speak(buf, conversation) end },
-            { keys.pause, "pause, resume, or continue where reading stopped", function()
+            { keys.play, "play from the message under the cursor, or pause and resume", function()
                 if player.run then
                     player.toggle_pause()
                 else
-                    speak(buf, conversation, true)
+                    speak(buf, conversation)
                 end
             end },
             { keys.next_chunk, "next chunk", function() player.step_chunk(1) end },
@@ -441,30 +447,30 @@ function M.open(conversation)
             { keys.faster, "faster", function() player.change_speed(0.1) end },
             { keys.slower, "slower", function() player.change_speed(-0.1) end },
             { keys.follow, "toggle keeping the spoken chunk in view", player.toggle_follow },
-            { keys.autoplay, "toggle reading unread messages aloud", "<Cmd>ZulipAutoplay<CR>" },
             { keys.dictate, "dictate a reply", function()
                 M.compose(conversation)
                 voice.dictate(M.composes[conversation.key])
             end },
-            { keys.stop, "stop reading", player.stop },
+            { keys.handsfree, "toggle hands-free voice control", function() require("zulip.handsfree").toggle(handsfree_ctx) end },
+        }
+        local rare = {
+            { keys.autoplay, "toggle reading unread messages aloud", "<Cmd>ZulipAutoplay<CR>" },
             { keys.check, "test player, microphone and service", voice.check },
             { keys.log, "send the voice log to the server", voice.send_log },
             { keys.device, "choose the microphone", function() voice.choose_device() end },
         }
         for _, action in ipairs(actions) do
             if action[1] then
+                vim.keymap.set("n", action[1], action[3], { buffer = buf, desc = "Zulip voice: " .. action[2] })
+            end
+        end
+        for _, action in ipairs(rare) do
+            if action[1] then
                 vim.keymap.set("n", keys.prefix .. action[1], action[3], { buffer = buf, desc = "Zulip voice: " .. action[2] })
             end
         end
-        vim.keymap.set("n", keys.prefix .. "?", function()
-            vim.notify(table.concat(vim.tbl_map(function(action)
-                return keys.prefix .. (action[1] or "") .. "  " .. action[2]
-            end, vim.tbl_filter(function(action)
-                return action[1]
-            end, actions)), "\n"))
-        end, { buffer = buf, desc = "Zulip voice: list keys" })
         pcall(function()
-            require("which-key").add({ { keys.prefix, group = "Zulip voice", buffer = buf } })
+            require("which-key").add({ { keys.prefix, group = "Zulip voice (rare)", buffer = buf } })
         end)
         if keys.interrupt then
             vim.keymap.set("n", keys.interrupt, player.stop, { buffer = buf, desc = "Zulip voice: stop reading" })
