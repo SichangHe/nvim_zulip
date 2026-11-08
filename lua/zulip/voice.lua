@@ -470,6 +470,7 @@ end
 function M.choose_device(device)
     if device and device ~= "" then
         config.voice.device = device
+        require("zulip.state").save()
         return vim.notify("zulip voice: microphone " .. device)
     end
     M.devices(function(err, devices)
@@ -479,6 +480,7 @@ function M.choose_device(device)
         vim.ui.select(devices, { prompt = "Microphone", format_item = function(d) return d.index .. " " .. d.name end }, function(choice)
             if choice then
                 config.voice.device = choice.index
+                require("zulip.state").save()
                 vim.notify("zulip voice: microphone " .. choice.index .. " " .. choice.name)
             end
         end)

@@ -1,5 +1,6 @@
 -- Voice against the live service: `ZULIPRC=<the human's zuliprc> nvim -l tests/voice.lua`.
 -- Posts only relay traffic to `voice-relay`. Needs `ffmpeg`; the speaker and the microphone are replaced by files.
+vim.env.XDG_STATE_HOME = vim.fn.tempname() -- settings saved by the tests stay out of the real state
 vim.opt.rtp:prepend(vim.fn.getcwd())
 local config = require("zulip.config")
 local conversation = require("zulip.conversation")

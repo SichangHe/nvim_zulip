@@ -10,6 +10,7 @@ function M.setup(opts)
     end
     local toggle = require("zulip.sidebar").toggle
     vim.api.nvim_create_user_command("Zulip", toggle, {})
+    require("zulip.state").apply(opts)
     local voice = require("zulip.voice")
     local player = require("zulip.player")
     vim.api.nvim_create_user_command("ZulipSwitch", function(command)
@@ -23,6 +24,7 @@ function M.setup(opts)
     end, { nargs = "?" })
     vim.api.nvim_create_user_command("ZulipAutoplay", function()
         config.voice.autoplay = not config.voice.autoplay
+        require("zulip.state").save()
         player.paint()
     end, {})
     if config.keys.toggle then

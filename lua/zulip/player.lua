@@ -72,6 +72,16 @@ end
 --- Mark `buf` as one whose windows show the status line, and stop following the audio when the cursor is moved by hand.
 function M.attach(buf)
     M.bufs[buf] = true
+    -- winbar belongs to the window, so it follows the buffer in and out of windows.
+    vim.api.nvim_create_autocmd("BufWinEnter", { buffer = buf, callback = M.paint })
+    vim.api.nvim_create_autocmd("BufWinLeave", {
+        buffer = buf,
+        callback = function(event)
+            for _, win in ipairs(vim.fn.win_findbuf(event.buf)) do
+                vim.wo[win].winbar = ""
+            end
+        end,
+    })
     vim.api.nvim_create_autocmd("CursorMoved", {
         buffer = buf,
         callback = function()
@@ -385,6 +395,7 @@ end
 --- Change the playback speed by `delta`, within 0.5 to 3.0, restarting the chunk when playing.
 function M.change_speed(delta)
     config.voice.speed = math.min(3, math.max(0.5, math.floor((config.voice.speed + delta) * 10 + 0.5) / 10))
+    require("zulip.state").save()
     local run = M.run
     if run and not run.paused then
         restart(run)
@@ -394,9 +405,11 @@ end
 
 --- Keep the spoken chunk in view, or stop doing so.
 function M.toggle_follow()
+    config.voice.follow = not config.voice.follow
+    require("zulip.state").save()
     local run = M.run
     if run then
-        run.following = not run.following
+        run.following = config.voice.follow
         highlight(run, true)
     end
     M.paint()

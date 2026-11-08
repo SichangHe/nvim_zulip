@@ -1,6 +1,7 @@
 --- Run with `ZULIPRC=path nvim -l tests/run.lua` against a live Zulip server.
 --- Sends one direct message from the account to itself. Marks nothing read.
 --- Prints only failures; exits non-zero when any check fails.
+vim.env.XDG_STATE_HOME = vim.fn.tempname() -- settings saved by the tests stay out of the real state
 vim.opt.runtimepath:prepend(vim.fn.getcwd())
 local api, sidebar, conversation = require("zulip.api"), require("zulip.sidebar"), require("zulip.conversation")
 local failures = 0
@@ -143,10 +144,22 @@ vim.wait(2500, function() return sends > 0 end)
 handsfree.heard("Over.")
 check("exactly one send per reply", sends, 1)
 handsfree.on = false
+-- settings persist; explicit options win
+local state, vconfig = require("zulip.state"), require("zulip.config").voice
+vconfig.speed, vconfig.autoplay, vconfig.device = 1.7, false, "Test Mic"
+state.save(true)
+vconfig.speed, vconfig.autoplay, vconfig.device = 1, true, "auto"
+state.apply({ voice = { autoplay = true } })
+check("saved settings load", { vconfig.speed, vconfig.device, state.handsfree }, { 1.7, "Test Mic", true })
+check("explicit option wins over saved", vconfig.autoplay, true)
+vconfig.speed, vconfig.device, vconfig.autoplay = 1, "auto", true
+state.handsfree = false
+os.remove(state.path())
 -- real key presses reach the voice actions; selection and motion keys stay unmapped
 conversation.open(offline)
 vim.api.nvim_set_current_buf(conversation.bufs[offline.key])
 local calls, real = {}, {}
+local planted_account = api.account == nil
 api.account = api.account or { user_id = 0 }
 for _, name in ipairs({ "step_chunk", "step_message", "change_speed", "stop", "toggle_pause", "read" }) do
     real[name] = player[name]
@@ -158,6 +171,18 @@ check("voice keys act", calls, { "read:" .. conversation.bufs[offline.key], "rea
 for _, key in ipairs({ "v", "V", "y", "[", "]", "{", "}", "f", "d" }) do
     check("key " .. key .. " stays a motion/selection key", vim.fn.maparg(key, "n", false, true).buffer ~= 1, true)
 end
+-- the key hints stay in the winbar: on open, after playback ends, and after a thread switch
+local function winbar() return vim.wo[vim.api.nvim_get_current_win()].winbar end
+check("hints in the winbar after open", winbar():find("play", 1, true) ~= nil, true)
+player.stop()
+check("hints after playback ends", winbar():find("play", 1, true) ~= nil, true)
+conversation.open(target)
+check("hints after switching thread in the same window", winbar():find("play", 1, true) ~= nil, true)
+vim.api.nvim_set_current_buf(conversation.bufs[offline.key])
+check("hints when returning to the first thread", winbar():find("play", 1, true) ~= nil, true)
+vim.cmd("enew")
+check("hints leave with the conversation", winbar(), "")
+vim.api.nvim_set_current_buf(conversation.bufs[offline.key])
 -- with nothing playing, previous/next start reading around the last heard position
 local started = {}
 player.read = function(_, _, messages, idx) started[#started + 1] = { messages[1].id, idx } end
@@ -183,6 +208,9 @@ for name, fn in pairs(real) do player[name] = fn end
 vim.cmd("bwipeout! " .. conversation.bufs[target.key])
 vim.cmd("bwipeout! " .. conversation.bufs[offline.key])
 api.request = real_request
+if planted_account then
+    api.account = nil
+end
 if not vim.env.ZULIPRC then
     os.exit(failures == 0 and 0 or 1)
 end

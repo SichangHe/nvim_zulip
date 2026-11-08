@@ -285,6 +285,7 @@ end
 function M.toggle(ctx)
     if M.on then
         voice.log("voice control off")
+        require("zulip.state").save(false)
         M.on = false
         if M.reply then
             cancel_timer(M.reply)
@@ -300,6 +301,7 @@ function M.toggle(ctx)
             return vim.notify("zulip voice: " .. err, vim.log.levels.ERROR)
         end
         M.on = true
+        require("zulip.state").save(true)
         voice.log("voice control on, start word %q, end word %q", config.voice.start_word, config.voice.end_word)
         voice.earcon("ready")
         player.paint()

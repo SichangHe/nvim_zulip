@@ -297,7 +297,7 @@ function M.load(conversation)
                     vim.fn.winrestview(view)
                 end)
             elseif not before or win == entering then
-                vim.api.nvim_win_set_cursor(win, { unread[1] and new_row or #lines, 0 })
+                vim.api.nvim_win_set_cursor(win, { math.max(unread[1] and new_row or #lines, 1), 0 })
             end
             M.mark_seen(buf, win)
         end
@@ -526,6 +526,13 @@ function M.open(conversation)
             if action[1] then
                 vim.keymap.set("n", keys.prefix .. action[1], action[3], { buffer = buf, desc = "Zulip voice: " .. action[2] })
             end
+        end
+        local state = require("zulip.state")
+        if state.handsfree and not require("zulip.handsfree").on then
+            state.handsfree = false
+            vim.schedule(function()
+                require("zulip.handsfree").toggle(handsfree_ctx)
+            end)
         end
         pcall(function()
             require("which-key").add({ { keys.prefix, group = "Zulip voice (rare)", buffer = buf } })

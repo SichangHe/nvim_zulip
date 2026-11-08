@@ -1,9 +1,11 @@
 --- Exercise the real curl transport against a local HTTP event server; sends nothing to Zulip.
 --- Run with `nvim -l tests/events.lua`; only failures are printed.
+vim.env.XDG_STATE_HOME = vim.fn.tempname() -- settings saved by the tests stay out of the real state
 vim.opt.runtimepath:prepend(vim.fn.getcwd())
 local api, sidebar = require("zulip.api"), require("zulip.sidebar")
 local config = require("zulip.config")
 config.refresh_ms, config.mark_read = 20, false
+require("zulip.config").voice.autoplay = false
 local failures = 0
 local notices = {}
 vim.notify = function(message) notices[#notices + 1] = message end
@@ -59,6 +61,8 @@ local function route(peer, method, path)
     elseif path == "/api/v1/events" and method == "DELETE" then
         deleted = deleted + 1
         respond(peer, { result = "success" })
+    elseif path == "/api/v1/users/me/subscriptions" then
+        respond(peer, { result = "success", subscriptions = {} })
     elseif path:match("^/api/v1/messages") then
         snapshots = snapshots + 1
         if fail_conversation and path:find("narrow=", 1, true) then
