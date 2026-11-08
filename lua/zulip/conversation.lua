@@ -441,6 +441,7 @@ function M.open(conversation)
                 end
             end },
             { keys.read, "read from the message under the cursor", function() speak(buf, conversation) end },
+            { keys.switch, "switch conversation (search the thread list)", function() require("zulip.switch").run() end },
             { keys.stop, "stop reading", function() player.stop() end },
             { keys.next_chunk, "next chunk", function() player.step_chunk(1) end },
             { keys.prev_chunk, "previous chunk", function() player.step_chunk(-1) end },

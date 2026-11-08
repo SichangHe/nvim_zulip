@@ -55,7 +55,7 @@ function M.status_line()
     if dictation == "recording" then
         parts[#parts + 1] = "<CR> in compose sends · <Esc> cancels · " .. keys.dictate .. " stops"
     else
-        parts[#parts + 1] = ("%s play · %s/%s chunk · %s/%s msg · %s/%s speed · %s voice · %s stop · %s? more"):format(keys.play, keys.next_chunk, keys.prev_chunk, keys.next_message, keys.prev_message, keys.faster, keys.slower, keys.handsfree, keys.stop, keys.prefix)
+        parts[#parts + 1] = ("%s play · %s/%s chunk · %s/%s msg · %s/%s speed · %s voice · %s switch · %s stop · %s? more"):format(keys.play, keys.next_chunk, keys.prev_chunk, keys.next_message, keys.prev_message, keys.faster, keys.slower, keys.handsfree, keys.switch, keys.stop, keys.prefix)
     end
     return " " .. table.concat(parts, " · "):gsub("%%", "%%%%")
 end

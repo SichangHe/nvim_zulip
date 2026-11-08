@@ -51,3 +51,5 @@ tests: `tests/voice.lua` against the live service; speaker and microphone replac
     - send writes the compose buffer, done earcon, resumes the player if the reply paused it
 - `voice.earcon`: tones played through `play_cmd`; frames count as silence while it sounds (`mute_until_ms`)
 - reading: pause keeps `resume_ms` (position in the bundle); skipping forward marks the left message read; `play` from the cursor marks earlier messages read
+
+`lua/zulip/switch.lua`: `matches` ranks threads by squashed name (exact, prefix, substring, edit distance); `run` opens or asks via `vim.ui.select`; handsfree `switch_to` uses it and keeps `choice` for "first/second/third"

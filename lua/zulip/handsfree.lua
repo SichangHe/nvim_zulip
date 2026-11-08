@@ -154,7 +154,35 @@ local function add(reply, heard)
     player.paint()
 end
 
+local ORDINALS = { first = 1, one = 1, ["1"] = 1, second = 2, two = 2, ["2"] = 2, third = 3, three = 3, ["3"] = 3 }
+
+--- "switch to X" / "go to X": open the conversation like X; several alike: list the top 3 and wait for "first", "second" or "third".
+local function switch_to(name)
+    local switch = require("zulip.switch")
+    local rows = require("zulip.sidebar").rows
+    local found = switch.matches(name, rows)
+    voice.log("voice control: switch to %q matches %s", name, table.concat(vim.tbl_map(function(r) return r.name end, vim.list_slice(found, 1, 3)), ", "))
+    if #found == 0 then
+        voice.earcon("error")
+        return vim.notify("zulip voice: no conversation like " .. name, vim.log.levels.WARN)
+    end
+    local exact = #found == 1 or switch.squash(found[1].topic or found[1].name) == switch.squash(name)
+    if exact then
+        voice.earcon("done")
+        return require("zulip.conversation").open(found[1])
+    end
+    M.choice = vim.list_slice(found, 1, 3)
+    vim.notify("zulip voice: say first, second or third:\n" .. table.concat(vim.tbl_map(function(r)
+        return r.name
+    end, M.choice), "\n"))
+    voice.earcon("ready")
+end
+
 local function open(rest)
+    local target = normalize(rest):match("^switch to (.+)$") or normalize(rest):match("^go to (.+)$") or normalize(rest):match("^open (.+)$")
+    if target then
+        return switch_to(target)
+    end
     local ctx = M.ctx
     local reply = { ctx = ctx, buf = ctx.compose(), base = "", text = "", paused = player.run ~= nil and not player.run.paused }
     if vim.api.nvim_buf_is_valid(reply.buf) then
@@ -187,6 +215,16 @@ end
 function M.heard(text)
     if not M.on or voice.session then
         return
+    end
+    if M.choice then
+        local n = ORDINALS[normalize(text):match("^(%w+)")]
+        local choice = M.choice
+        M.choice = nil
+        voice.log("voice control: choice %q -> %s", text, tostring(n))
+        if n and choice[n] then
+            voice.earcon("done")
+            return require("zulip.conversation").open(choice[n])
+        end
     end
     if M.reply then
         voice.log("voice control: reply open, adding %q", text)

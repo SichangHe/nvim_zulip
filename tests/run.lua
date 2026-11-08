@@ -91,6 +91,34 @@ player.run = nil
 player.on_idle()
 check("switch opens the task's conversation", vim.api.nvim_get_current_buf(), conversation.bufs[target.key])
 sidebar.rows = rows
+-- switching by name
+local switch = require("zulip.switch")
+local threads = {
+    { key = "5/terminal_viz", name = "s > terminal_viz", stream_id = 5, topic = "terminal_viz", n_unread = 2 },
+    { key = "5/nvim_zulip", name = "s > nvim_zulip", stream_id = 5, topic = "nvim_zulip", n_unread = 0 },
+    { key = "5/nvim_omnigent", name = "s > nvim_omnigent", stream_id = 5, topic = "nvim_omnigent", n_unread = 0 },
+}
+check("spoken name matches a snake_case topic", switch.matches("terminal viz", threads)[1].topic, "terminal_viz")
+check("misheard name still matches", switch.matches("terminal vis", threads)[1].topic, "terminal_viz")
+check("ambiguous prefix lists both", vim.tbl_map(function(r) return r.topic end, switch.matches("nvim", threads)), { "nvim_zulip", "nvim_omnigent" })
+check("no match", switch.matches("banana", threads), {})
+local saved_rows = sidebar.rows
+sidebar.rows = threads
+local handsfree = require("zulip.handsfree")
+handsfree.on = true
+handsfree.heard("Pause, switch to terminal viz")
+check("voice switch opens the thread", vim.api.nvim_get_current_buf(), conversation.bufs["5/terminal_viz"])
+local notices = {}
+local notify = vim.notify
+vim.notify = function(message) notices[#notices + 1] = message end
+handsfree.heard("pause go to nvim")
+check("ambiguous voice switch waits for a choice", handsfree.choice ~= nil and #handsfree.choice, 2)
+handsfree.heard("second")
+check("ordinal picks the second", vim.api.nvim_get_current_buf(), conversation.bufs["5/nvim_omnigent"])
+vim.notify = notify
+handsfree.on = false
+for _, key in ipairs({ "5/terminal_viz", "5/nvim_omnigent" }) do vim.cmd("bwipeout! " .. conversation.bufs[key]) end
+sidebar.rows = saved_rows
 -- real key presses reach the voice actions; selection and motion keys stay unmapped
 conversation.open(offline)
 vim.api.nvim_set_current_buf(conversation.bufs[offline.key])
@@ -106,6 +134,11 @@ check("voice keys act", calls, { "step_chunk:1", "step_chunk:-1", "step_message:
 for _, key in ipairs({ "v", "V", "y", "[", "]", "{", "}", "f", "d" }) do
     check("key " .. key .. " stays a motion/selection key", vim.fn.maparg(key, "n", false, true).buffer ~= 1, true)
 end
+local real_run, picked = switch.run, 0
+switch.run = function() picked = picked + 1 end
+press("t")
+switch.run = real_run
+check("t opens the thread picker", picked, 1)
 for name, fn in pairs(real) do player[name] = fn end
 vim.cmd("bwipeout! " .. conversation.bufs[target.key])
 vim.cmd("bwipeout! " .. conversation.bufs[offline.key])
