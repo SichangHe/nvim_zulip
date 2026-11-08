@@ -217,6 +217,7 @@ check("not sent twice", #writes, 1)
 -- hands-free voice control
 local handsfree = require("zulip.handsfree")
 check("start word", { handsfree.after_start_word("Pause, hello there"), handsfree.after_start_word("paws"), handsfree.after_start_word("hello pause") }, { "hello there", "", nil })
+check("start word variants", { handsfree.after_start_word("Pulse. Pulse. hello"), handsfree.after_start_word("polls") }, { "hello", "" })
 check("end word", { handsfree.strip_end_word("my reply over"), handsfree.strip_end_word("my reply over and out"), handsfree.strip_end_word("over over"), handsfree.strip_end_word("no end") }, { "my reply", "my reply", "", nil })
 config.voice.play_cmd = { "sh", "-c", "cat > /dev/null" }
 local spoken_reply

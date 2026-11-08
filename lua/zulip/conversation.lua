@@ -440,6 +440,8 @@ function M.open(conversation)
                     speak(buf, conversation)
                 end
             end },
+            { keys.read, "read from the message under the cursor", function() speak(buf, conversation) end },
+            { keys.stop, "stop reading", function() player.stop() end },
             { keys.next_chunk, "next chunk", function() player.step_chunk(1) end },
             { keys.prev_chunk, "previous chunk", function() player.step_chunk(-1) end },
             { keys.next_message, "next message", function() player.step_message(1) end },
@@ -476,7 +478,7 @@ function M.open(conversation)
             vim.keymap.set("n", keys.interrupt, player.stop, { buffer = buf, desc = "Zulip voice: stop reading" })
         end
         player.attach(buf)
-        vim.keymap.set("n", "r", function()
+        vim.keymap.set("n", "R", function()
             M.load(conversation)
         end, { buffer = buf, desc = "Reload" })
         vim.api.nvim_create_autocmd("BufLeave", {

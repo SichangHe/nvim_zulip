@@ -51,7 +51,12 @@ function M.status_line()
         parts[#parts + 1] = run.following and "follow" or "follow off"
     end
     parts[#parts + 1] = "autoplay " .. (config.voice.autoplay and "on" or "off")
-    parts[#parts + 1] = config.voice.keys.prefix .. "? voice keys"
+    local keys = config.voice.keys
+    if dictation == "recording" then
+        parts[#parts + 1] = "<CR> in compose sends · <Esc> cancels · " .. keys.dictate .. " stops"
+    else
+        parts[#parts + 1] = ("%s play · %s/%s chunk · %s/%s msg · %s/%s speed · %s voice · %s stop · %s? more"):format(keys.play, keys.next_chunk, keys.prev_chunk, keys.next_message, keys.prev_message, keys.faster, keys.slower, keys.handsfree, keys.stop, keys.prefix)
+    end
     return " " .. table.concat(parts, " · "):gsub("%%", "%%%%")
 end
 
@@ -402,7 +407,7 @@ end
 function M.step_chunk(delta)
     local run = M.run
     if not run then
-        return
+        return vim.notify("zulip voice: nothing is playing; start with the play or read key")
     end
     if delta > 0 then
         if run.idx + 1 < run.items[run.i].n then
@@ -423,7 +428,7 @@ end
 function M.step_message(delta)
     local run = M.run
     if not run then
-        return
+        return vim.notify("zulip voice: nothing is playing; start with the play or read key")
     end
     if delta > 0 and run.items[run.i + 1] then
         if run.mark then

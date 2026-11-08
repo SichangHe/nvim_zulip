@@ -32,11 +32,12 @@ local function fail(err)
     vim.notify("zulip voice: " .. err, vim.log.levels.ERROR)
 end
 
-local LOG_LINES = 400
+local LOG_LINES = 2000
 local log_ring = {}
+local log
 
 --- Remember a line of debugging text in memory; `:ZulipVoiceLog` ships them to the service.
-local function log(format, ...)
+function log(format, ...)
     log_ring[#log_ring + 1] = os.date("%H:%M:%S ") .. format:format(...)
     if #log_ring > LOG_LINES then
         table.remove(log_ring, 1)
@@ -263,12 +264,30 @@ local function call(op, fields, on_done)
     end)
 end
 
---- Send the remembered debugging lines to the service's `client.log`.
+M.log = log
+
+--- Send the remembered debugging lines to the service's `client.log`, in parts of at most 9000 characters.
 function M.send_log()
+    local parts, part = {}, {}
+    local size = 0
+    for _, line in ipairs(log_ring) do
+        if size + #line + 1 > 9000 and #part > 0 then
+            parts[#parts + 1], part, size = table.concat(part, "\n"), {}, 0
+        end
+        part[#part + 1] = line:sub(1, 8000)
+        size = size + #line + 1
+    end
+    parts[#parts + 1] = table.concat(part, "\n")
+    local n_sent, failed = 0, nil
     with_relay(fail, function()
-        call("log", { label = "nvim_zulip", text = table.concat(log_ring, "\n"):sub(-9000) }, function(err, result)
-            vim.notify(err and "zulip voice: log not sent: " .. err or ("zulip voice: sent log (%d lines, %d bytes) to the server"):format(#log_ring, result.bytes))
-        end)
+        for i, text in ipairs(parts) do
+            call("log", { label = ("nvim_zulip %d/%d"):format(i, #parts), text = text }, function(err)
+                n_sent, failed = n_sent + 1, failed or err
+                if n_sent == #parts then
+                    vim.notify(failed and "zulip voice: log not sent: " .. failed or ("zulip voice: sent log (%d lines, %d parts) to the server"):format(#log_ring, #parts))
+                end
+            end)
+        end
     end)
 end
 
@@ -325,14 +344,15 @@ function M.fetch(bundle, on_done)
 end
 
 --- Text said in the audio file `path`; `on_done(err, text)`.
-function M.stt(path, on_done)
+--- `prompt` (optional) biases recognition toward control words.
+function M.stt(path, on_done, prompt)
     with_relay(on_done, function()
         api.request("POST", "/user_uploads", { file = { file = path } }, function(err, upload)
             if err then
                 return on_done(err)
             end
             local uri = upload.uri or upload.url
-            call("stt", { uri = uri, attachment = ("[audio](%s)"):format(uri) }, function(call_err, result)
+            call("stt", { uri = uri, attachment = ("[audio](%s)"):format(uri), prompt = prompt }, function(call_err, result)
                 on_done(call_err, result and result.text)
             end)
         end)
@@ -587,7 +607,12 @@ local function drain(session)
 end
 
 --- Transcribe the speech `pcm` of `session` as the next piece.
+local VOICE_PROMPT = "Pause. Pause. Over." -- biases Whisper toward the hands-free control words
+
 local function send_piece(session, pcm)
+    if session.on_text and M.session then
+        return log("listener piece dropped: dictating")
+    end
     session.n_sent = session.n_sent + 1
     local index, path = session.n_sent, vim.fn.tempname() .. ".wav"
     write_file(path, wav(pcm))
@@ -601,7 +626,7 @@ local function send_piece(session, pcm)
         log("piece %d: heard %q", index, text or "")
         session.results[index] = text or ""
         drain(session)
-    end)
+    end, session.on_text and VOICE_PROMPT or nil)
 end
 
 --- Cut the speech heard so far into a piece and send it.
@@ -629,7 +654,7 @@ local function feed_frame(session, frame)
     session.threshold = math.max(config.voice.silence_rms, 3 * session.floor, 0.1 * session.hold)
     session.peak = math.max(session.peak, session.level)
     session.max_level = math.max(session.max_level, session.level)
-    if session.n_frames % 10 == 0 then
+    if session.n_frames % 50 == 0 then
         log("frames=%d level=%d peak=%d floor=%d threshold=%d piece=%d", session.n_frames, session.level, session.peak, session.floor, session.threshold, #session.piece)
         session.peak = 0
     end

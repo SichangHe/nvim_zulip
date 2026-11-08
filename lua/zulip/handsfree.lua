@@ -13,7 +13,7 @@ local M = {
     ctx = nil,
 }
 local RESUME_SILENCE_MS = 1000
-local START_ALIASES = { pause = { "pause", "paws", "pose", "pours", "paused", "pawz" } }
+local START_ALIASES = { pause = { "pause", "paws", "pose", "pours", "paused", "pawz", "pulse", "pulls", "polls" } }
 
 local function normalize(text)
     return vim.trim(text:lower():gsub("[^a-z0-9 ]+", " "):gsub("%s+", " "))
@@ -189,9 +189,11 @@ function M.heard(text)
         return
     end
     if M.reply then
+        voice.log("voice control: reply open, adding %q", text)
         return add(M.reply, text)
     end
     local rest = M.after_start_word(text)
+    voice.log("voice control: heard %q, start word %s", text, rest and ("matched, rest %q"):format(rest) or "not found, ignored")
     if rest then
         open(rest)
     end
@@ -208,6 +210,7 @@ end
 --- Turn the listener on or off; `ctx.compose()` returns the compose buffer of the conversation.
 function M.toggle(ctx)
     if M.on then
+        voice.log("voice control off")
         M.on = false
         if M.reply then
             cancel_timer(M.reply)
@@ -223,6 +226,7 @@ function M.toggle(ctx)
             return vim.notify("zulip voice: " .. err, vim.log.levels.ERROR)
         end
         M.on = true
+        voice.log("voice control on, start word %q, end word %q", config.voice.start_word, config.voice.end_word)
         voice.earcon("ready")
         player.paint()
         vim.notify(("zulip voice: voice control on; say \"%s\", finish a reply with \"%s\""):format(config.voice.start_word, config.voice.end_word))

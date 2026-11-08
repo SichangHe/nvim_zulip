@@ -20,7 +20,7 @@
     - `player.hold` pauses reading meanwhile
 - speech level: threshold is the highest of `silence_rms`, 3 times a tracked quiet floor and a tenth of the decaying peak; on stop the remainder is always sent, and the whole recording when nothing passed
 - microphone: `resolve_device`; `auto` on macOS lists avfoundation devices, drops virtual ones, probes candidates for 0.5 s and caches the first with a nonzero signal; all-zero capture clears the cache and reports with the device list
-- `log`: in-memory ring of 400 lines (frames, levels, cuts, uploads, transcripts, insertions); `:ZulipVoiceLog` sends it with the relay `log` op
+- `log`: in-memory ring of 2000 lines (frame levels every 5 s), sent in parts of 9000 characters (frames, levels, cuts, uploads, transcripts, insertions); `:ZulipVoiceLog` sends it with the relay `log` op
 - a request also while any request waits, one shared read of the relay channel every 3 s (`FALLBACK_MS`), because the event queue can lose results across reconnects; registration backfills the whole channel
 - `send_when_done` (`<CR>` while recording): flags the session, stops the recorder; `close` writes the buffer once every piece is in
 - `check` (`:ZulipVoiceCheck`): plays 0.3 s of silence, records 4 s, transcribes it, pings the service
@@ -34,7 +34,7 @@
 - steps (`step_chunk`, `step_message`) move the position at once and restart after 250 ms, so quick presses add up
 - speed: `atempo` filters (two chained above 2.0) passed with `-ss`; elapsed time scales by speed; changing it restarts the chunk
 - follow: each chunk change moves the cursor to its block when `run.following`; a `CursorMoved` not caused by the player turns it off
-- keys: one table in `conversation.open`; frequent actions are single normal-mode keys, rare ones `gv` + letter; compose buffers only get `<C-g>` (normal), `<C-c>`, and `<CR>`/`<Esc>` while recording
+- keys: one table in `conversation.open`; voice actions sit on insert/change keys (`i o O a A s S c p r x I`) that do nothing in the read-only buffer, rare ones on `gv` + letter; `tests/run.lua` feeds the real keys; compose buffers only get `<C-g>` (normal), `<C-c>`, and `<CR>`/`<Esc>` while recording
 - status line: winbar of conversation windows from `status_line`
 - `after_reading` runs `conversation.switch_to` once the queue ends; `stop` cancels it
 

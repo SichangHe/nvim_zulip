@@ -32,7 +32,7 @@ Options and their defaults are in [`lua/zulip/config.lua`](lua/zulip/config.lua)
 
 Links to the Zulip server carry its full address, so `gx` or a click opens them. Uploaded images, and the first page of uploaded PDFs (needs `pdftoppm` from Poppler), show inline under their link when [snacks.nvim](https://github.com/folke/snacks.nvim) image support works in your terminal (e.g. Kitty, also through tmux). `p` in a conversation shows or hides these previews. `gx` opens the upload on the cursor line, preferring HTML: with a `viz` command on `PATH` it goes there, else to `vim.ui.open`.
 
-`r` refreshes the sidebar or reloads the conversation; `q` hides the sidebar. Displayed conversations reload on their own when a message arrives, without moving the cursor or scrolling.
+`r` refreshes the sidebar, `R` reloads a conversation; `q` hides the sidebar. Displayed conversations reload on their own when a message arrives, without moving the cursor or scrolling.
 
 While the sidebar is visible, Zulip's event queue delivers message and read-flag changes through long polling. Idle connections fetch no message snapshots. Interrupted connections reconnect automatically and refresh to catch up.
 
@@ -42,16 +42,16 @@ Reads agent messages aloud and dictates replies through the voice service (priva
 
 Opening a conversation reads its unread messages from others, oldest first (`autoplay`, on by default; `gA` or `:ZulipAutoplay` toggles). Reading marks messages read forward only: a message is read once it has been spoken. The status line on the conversation window shows the state (idle, loading, playing, paused, recording, transcribing, offline), and the block being read is highlighted and followed.
 
-Keys in a conversation (normal mode; each has a which-key description). Frequent actions are single keys:
+Keys in a conversation (normal mode; each has a which-key description). The buffer is read-only, so voice actions use insert and change keys, and motion, selection and yank keys (`v`, `V`, `y`, `[`, `]`, `{`, `}`, `f`, `d`...) keep their meaning:
 
-- `<Space>` play from the message under the cursor, or pause and resume (resumes mid-chunk); earlier unread messages count as read, reading only moves forward
-- `]` `[` next and previous chunk, `}` `{` next and previous message (previous first restarts the current one); presses in quick succession add up
-- `+` `-` playback speed, 0.5 to 3.0 in 0.1 steps (needs a `play_cmd` that accepts `-af`, as `ffplay` does)
-- `f` keep the chunk being read in view (on by default; moving the cursor yourself turns it off until `f` or the next play)
-- `d` open the compose buffer and start dictating; `v` toggle hands-free voice control; `<C-c>` stop reading
+- `i` play from the message under the cursor, or pause and resume (resumes mid-chunk); `r` read from the cursor message; `x` stop (also `<C-c>`)
+- `o` `O` next and previous chunk, `a` `A` next and previous message (previous first restarts the current one); presses in quick succession add up; these need something playing
+- `s` `S` playback speed up and down, 0.5 to 3.0 in 0.1 steps (needs a `play_cmd` that accepts `-af`, as `ffplay` does)
+- `I` keep the chunk being read in view (on by default; moving the cursor yourself turns it off until `I` or the next play)
+- `p` open the compose buffer and start dictating; `c` toggle hands-free voice control; `R` reload the conversation
 - rare, behind `gv`: `gva` autoplay, `gvc` check, `gvL` send the log, `gvm` choose the microphone
 
-Hands-free voice control (`v`) keeps the microphone open. Say "pause" (fuzzy: "paws", "pose"...) and reading pauses, a ready tone plays, and what you say next is typed live into the compose buffer. End with "over" (or "over and out") and about a second of silence, or just keep quiet for 6 s: the reply is sent, a done tone plays, and reading resumes. "Pause" with nothing after it resumes after 8 s. "Pause next" and "pause back" skip by message. Speech without the start word is ignored. Playback volume is untouched, so speakers can bleed into the microphone: use headphones. Words and times are `voice.start_word`, `end_word`, `long_silence_s` and `empty_s`.
+Hands-free voice control (`c`) keeps the microphone open. Say "pause" (fuzzy: "paws", "pose"...) and reading pauses, a ready tone plays, and what you say next is typed live into the compose buffer. End with "over" (or "over and out") and about a second of silence, or just keep quiet for 6 s: the reply is sent, a done tone plays, and reading resumes. "Pause" with nothing after it resumes after 8 s. "Pause next" and "pause back" skip by message. Speech without the start word is ignored. Playback volume is untouched, so speakers can bleed into the microphone: use headphones. Words and times are `voice.start_word`, `end_word`, `long_silence_s` and `empty_s`.
 
 Dictation, in the compose buffer: `<C-g>` (normal mode only) starts and stops recording, `<Esc>` in normal mode cancels, `<CR>` while recording (also in insert mode) stops, waits for every piece and sends once. Each piece keeps 1.2 s of audio from before the first word. The winbar shows `● Recording` with the time and level, then `Transcribing…`. Speech is cut at pauses and each piece appears at the cursor as it is transcribed, so the buffer is a live preview. Playback pauses while dictating. Otherwise `<CR>` sends. Stopping always sends the rest of the recording; if no speech passed the level threshold the whole recording is sent. Missing `ffmpeg`, microphone errors and service errors show as notifications.
 

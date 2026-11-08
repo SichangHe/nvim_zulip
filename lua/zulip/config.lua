@@ -46,20 +46,23 @@ return {
         speed = 1.0,
         --- Keep the chunk being read in view; moving the cursor yourself turns it off until toggled or reading restarts.
         follow = true,
-        --- Buffer-local mappings (normal mode) in conversations; `false` skips one. Frequent actions are single keys;
-        --- rare ones are `prefix` plus a key (`prefix` then `?` lists them). `interrupt` stops reading in conversation and compose buffers;
-        --- `compose_dictate` toggles dictation in the compose buffer.
+        --- Buffer-local mappings (normal mode) in conversations; `false` skips one. The buffer is read-only, so voice
+        --- actions take the insert and change keys, which do nothing there, and leave motion, selection and yank keys alone.
+        --- Rare actions are `prefix` plus a key (`prefix` then `?` lists them). `interrupt` stops reading in conversation and
+        --- compose buffers; `compose_dictate` toggles dictation in the compose buffer.
         keys = {
-            play = "<Space>",
-            next_chunk = "]",
-            prev_chunk = "[",
-            next_message = "}",
-            prev_message = "{",
-            faster = "+",
-            slower = "-",
-            follow = "f",
-            dictate = "d",
-            handsfree = "v",
+            play = "i",
+            read = "r",
+            next_chunk = "o",
+            prev_chunk = "O",
+            next_message = "a",
+            prev_message = "A",
+            faster = "s",
+            slower = "S",
+            follow = "I",
+            dictate = "p",
+            handsfree = "c",
+            stop = "x",
             interrupt = "<C-c>",
             compose_dictate = "<C-g>",
             prefix = "gv",

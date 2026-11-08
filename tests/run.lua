@@ -91,6 +91,22 @@ player.run = nil
 player.on_idle()
 check("switch opens the task's conversation", vim.api.nvim_get_current_buf(), conversation.bufs[target.key])
 sidebar.rows = rows
+-- real key presses reach the voice actions; selection and motion keys stay unmapped
+conversation.open(offline)
+vim.api.nvim_set_current_buf(conversation.bufs[offline.key])
+local calls, real = {}, {}
+api.account = api.account or { user_id = 0 }
+for _, name in ipairs({ "step_chunk", "step_message", "change_speed", "stop", "toggle_pause", "read" }) do
+    real[name] = player[name]
+    player[name] = function(...) calls[#calls + 1] = name .. ":" .. tostring((...)) end
+end
+local function press(keys) vim.api.nvim_feedkeys(vim.keycode(keys), "x", false) end
+for _, keys in ipairs({ "o", "O", "a", "A", "s", "S", "x", "i", "r" }) do press(keys) end
+check("voice keys act", calls, { "step_chunk:1", "step_chunk:-1", "step_message:1", "step_message:-1", "change_speed:0.1", "change_speed:-0.1", "stop:nil", "read:" .. conversation.bufs[offline.key], "read:" .. conversation.bufs[offline.key] })
+for _, key in ipairs({ "v", "V", "y", "[", "]", "{", "}", "f", "d" }) do
+    check("key " .. key .. " stays a motion/selection key", vim.fn.maparg(key, "n", false, true).buffer ~= 1, true)
+end
+for name, fn in pairs(real) do player[name] = fn end
 vim.cmd("bwipeout! " .. conversation.bufs[target.key])
 vim.cmd("bwipeout! " .. conversation.bufs[offline.key])
 api.request = real_request
