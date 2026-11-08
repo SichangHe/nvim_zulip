@@ -3,6 +3,9 @@ local config = require("zulip.config")
 local M = {
     --- Whether voice control was on when last saved.
     handsfree = false,
+    --- The conversation open now and the one before it, each `{ key, name, stream_id, topic, user_ids }`, or `nil`.
+    current = nil,
+    previous = nil,
 }
 local FIELDS = { "autoplay", "speed", "follow", "device", "start_word", "end_word", "long_silence_s", "empty_s", "pause_ms", "silence_rms" }
 --- The settings file.
@@ -21,6 +24,7 @@ end
 function M.apply(opts)
     local saved = M.load()
     M.handsfree = saved.handsfree == true
+    M.current, M.previous = saved.current, saved.previous
     for _, field in ipairs(FIELDS) do
         if saved[field] ~= nil and not (opts and opts.voice and opts.voice[field] ~= nil) then
             config.voice[field] = saved[field]
@@ -36,7 +40,7 @@ function M.save(handsfree)
     if handsfree ~= nil then
         M.handsfree = handsfree
     end
-    local saved = { handsfree = M.handsfree }
+    local saved = { handsfree = M.handsfree, current = M.current, previous = M.previous }
     for _, field in ipairs(FIELDS) do
         saved[field] = config.voice[field]
     end

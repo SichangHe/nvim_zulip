@@ -458,6 +458,12 @@ end
 --- Show `conversation` and load its messages:
 --- from the sidebar in the window beside it, from elsewhere in the current window.
 function M.open(conversation)
+    local state = require("zulip.state")
+    if not (state.current and state.current.key == conversation.key) then
+        state.previous = state.current or state.previous
+        state.current = { key = conversation.key, name = conversation.name, stream_id = conversation.stream_id, topic = conversation.topic, user_ids = conversation.user_ids }
+        state.save()
+    end
     local buf = M.bufs[conversation.key]
     if not valid(buf) then
         buf = vim.api.nvim_create_buf(true, true)
@@ -496,6 +502,7 @@ function M.open(conversation)
                 end
             end },
             { keys.read, "read from the message under the cursor", function() speak(buf, conversation) end },
+            { keys.back, "switch back to the previous conversation", function() require("zulip.switch").back() end },
             { keys.switch, "switch conversation (search the thread list)", function() require("zulip.switch").run() end },
             { keys.stop, "stop reading", function() player.stop() end },
             { keys.next_chunk, "next chunk", function() step(buf, conversation, "chunk", 1) end },

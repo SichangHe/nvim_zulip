@@ -69,11 +69,26 @@ local function choose(rows)
     end)
 end
 
+--- Open the conversation before the current one (Alt-Tab style); repeating goes back and forth.
+function M.back()
+    local previous = require("zulip.state").previous
+    if not previous then
+        return vim.notify("zulip: no previous conversation yet", vim.log.levels.WARN)
+    end
+    require("zulip.conversation").open(previous)
+end
+
 --- `:ZulipSwitch [name]`: with a name open the best match, asking when several match about equally; without, pick from all.
 function M.run(query)
     local rows = require("zulip.sidebar").rows
+    if query == "-" then
+        return M.back()
+    end
     if #rows == 0 then
         return vim.notify("zulip: no conversations yet; open the sidebar first", vim.log.levels.WARN)
+    end
+    if query == "-" then
+        return M.back()
     end
     if not query or query == "" then
         return choose(rows)

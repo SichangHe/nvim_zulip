@@ -203,6 +203,11 @@ function M.navigation(text)
 end
 
 local function open(rest)
+    local said = normalize(rest)
+    if said == "switch back" or said == "previous agent" or said == "previous thread" or said == "go back to the previous agent" then
+        voice.earcon("done")
+        return require("zulip.switch").back()
+    end
     local target = normalize(rest):match("^switch to (.+)$") or normalize(rest):match("^go to (.+)$") or normalize(rest):match("^open (.+)$")
     if target then
         return switch_to(target)

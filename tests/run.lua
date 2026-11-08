@@ -171,6 +171,22 @@ check("voice keys act", calls, { "read:" .. conversation.bufs[offline.key], "rea
 for _, key in ipairs({ "v", "V", "y", "[", "]", "{", "}", "f", "d" }) do
     check("key " .. key .. " stays a motion/selection key", vim.fn.maparg(key, "n", false, true).buffer ~= 1, true)
 end
+-- switching back to the previous conversation, Alt-Tab style
+local st = require("zulip.state")
+st.current, st.previous = nil, nil
+conversation.open(offline)
+conversation.open(target)
+check("previous is the conversation left", st.previous.key, offline.key)
+press("T")
+check("T goes back", vim.api.nvim_get_current_buf(), conversation.bufs[offline.key])
+check("and again forth", (function() switch.back() return vim.api.nvim_get_current_buf() end)(), conversation.bufs[target.key])
+sidebar.rows = threads
+handsfree.on = true
+handsfree.heard("pause switch back")
+check("voice switch back", vim.api.nvim_get_current_buf(), conversation.bufs[offline.key])
+handsfree.on = false
+sidebar.rows = saved_rows
+vim.api.nvim_set_current_buf(conversation.bufs[offline.key])
 -- the key hints stay in the winbar: on open, after playback ends, and after a thread switch
 local function winbar() return vim.wo[vim.api.nvim_get_current_win()].winbar end
 check("hints in the winbar after open", winbar():find("play", 1, true) ~= nil, true)
