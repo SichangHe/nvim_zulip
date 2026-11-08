@@ -109,24 +109,67 @@ local function mark_upto(buf, id)
     end
 end
 
---- Read aloud from the message under the cursor of `buf` (`conversation`), through the later messages of others.
+--- Read aloud from chunk `idx` (0-based) of message `id` in `buf` (`conversation`), through the later messages of others.
 --- Earlier unread messages count as read: reading only moves forward.
+local function read_from(buf, conversation, id, idx)
+    local messages = {}
+    for _, message in ipairs(M.shown[buf].messages) do
+        if message.id == id or (#messages > 0 and message.sender_id ~= api.account.user_id) then
+            messages[#messages + 1] = message
+        end
+    end
+    mark_upto(buf, id - 1)
+    player.read(buf, conversation.key, messages, idx, function(done_id)
+        mark_upto(buf, done_id)
+    end)
+end
+
+--- Read aloud from the message under the cursor of `buf`.
 local function speak(buf, conversation)
     local shown = M.shown[buf]
     local at = shown and span_at(shown.spans, vim.api.nvim_win_get_cursor(0)[1])
     if not at then
         return fail("no message here")
     end
-    local messages = {}
-    for _, message in ipairs(shown.messages) do
-        if message.id == at.id or (#messages > 0 and message.sender_id ~= api.account.user_id) then
-            messages[#messages + 1] = message
-        end
+    read_from(buf, conversation, at.id, 0)
+end
+
+--- Move `delta` (+1 or -1) by `unit` (`chunk` or `message`). While reading that moves the reading;
+--- otherwise it starts reading: previous replays the last chunk or message heard, next starts after it;
+--- with nothing heard it starts from the cursor message (its last chunk for previous chunk).
+local function step(buf, conversation, unit, delta)
+    if player.run then
+        return unit == "chunk" and player.step_chunk(delta) or player.step_message(delta)
     end
-    mark_upto(buf, at.id - 1)
-    player.read(buf, conversation.key, messages, 0, function(id)
-        mark_upto(buf, id)
-    end)
+    local shown = M.shown[buf]
+    local at = shown and span_at(shown.spans, vim.api.nvim_win_get_cursor(0)[1])
+    local last = player.last[conversation.key]
+    if not at then
+        return fail("no message here")
+    end
+    local id, idx = last and last.id or at.id, last and last.idx or 0
+    local function n_chunks(message_id)
+        local message = vim.iter(shown.messages):find(function(m) return m.id == message_id end)
+        return message and #voice.chunks(voice.blocks(message.content)) or 0
+    end
+    if not last and unit == "chunk" and delta < 0 then
+        idx = math.max(n_chunks(id) - 1, 0)
+    elseif last and unit == "chunk" and delta > 0 then
+        idx = idx + 1
+        if idx >= n_chunks(id) then
+            local after = vim.iter(shown.messages):find(function(m) return m.id > id and m.sender_id ~= api.account.user_id end)
+            id, idx = after and after.id or id, after and 0 or idx - 1
+        end
+    elseif last and unit == "message" then
+        idx = 0
+        if delta > 0 then
+            local after = vim.iter(shown.messages):find(function(m) return m.id > id and m.sender_id ~= api.account.user_id end)
+            id = after and after.id or id
+        end
+    elseif not last then
+        idx = 0
+    end
+    read_from(buf, conversation, id, idx)
 end
 
 --- Each of `lines` as a Markdown quote, then an empty line to write on.
@@ -443,10 +486,10 @@ function M.open(conversation)
             { keys.read, "read from the message under the cursor", function() speak(buf, conversation) end },
             { keys.switch, "switch conversation (search the thread list)", function() require("zulip.switch").run() end },
             { keys.stop, "stop reading", function() player.stop() end },
-            { keys.next_chunk, "next chunk", function() player.step_chunk(1) end },
-            { keys.prev_chunk, "previous chunk", function() player.step_chunk(-1) end },
-            { keys.next_message, "next message", function() player.step_message(1) end },
-            { keys.prev_message, "previous message (restarts the current one first)", function() player.step_message(-1) end },
+            { keys.next_chunk, "next chunk", function() step(buf, conversation, "chunk", 1) end },
+            { keys.prev_chunk, "previous chunk", function() step(buf, conversation, "chunk", -1) end },
+            { keys.next_message, "next message", function() step(buf, conversation, "message", 1) end },
+            { keys.prev_message, "previous message (restarts the current one first)", function() step(buf, conversation, "message", -1) end },
             { keys.faster, "faster", function() player.change_speed(0.1) end },
             { keys.slower, "slower", function() player.change_speed(-0.1) end },
             { keys.follow, "toggle keeping the spoken chunk in view", player.toggle_follow },

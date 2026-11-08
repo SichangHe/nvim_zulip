@@ -45,7 +45,7 @@ Opening a conversation reads its unread messages from others, oldest first (`aut
 Keys in a conversation (normal mode; each has a which-key description). The buffer is read-only, so voice actions use insert and change keys, and motion, selection and yank keys (`v`, `V`, `y`, `[`, `]`, `{`, `}`, `f`, `d`...) keep their meaning:
 
 - `i` play from the message under the cursor, or pause and resume (resumes mid-chunk); `r` read from the cursor message; `x` stop (also `<C-c>`)
-- `o` `O` next and previous chunk, `a` `A` next and previous message (previous first restarts the current one); presses in quick succession add up; these need something playing
+- `o` `O` next and previous chunk, `a` `A` next and previous message (previous first restarts the current one); presses in quick succession add up; with nothing playing, `O`/`A` replay the last heard chunk/message and `o`/`a` start after it (from the cursor message if nothing was heard)
 - `s` `S` playback speed up and down, 0.5 to 3.0 in 0.1 steps (needs a `play_cmd` that accepts `-af`, as `ffplay` does)
 - `I` keep the chunk being read in view (on by default; moving the cursor yourself turns it off until `I` or the next play)
 - `t` search the thread list and switch (`:ZulipSwitch [name]` too; telescope or fzf-lua are used when installed as `vim.ui.select`)

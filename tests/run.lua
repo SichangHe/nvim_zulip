@@ -130,10 +130,26 @@ for _, name in ipairs({ "step_chunk", "step_message", "change_speed", "stop", "t
 end
 local function press(keys) vim.api.nvim_feedkeys(vim.keycode(keys), "x", false) end
 for _, keys in ipairs({ "o", "O", "a", "A", "s", "S", "x", "i", "r" }) do press(keys) end
-check("voice keys act", calls, { "step_chunk:1", "step_chunk:-1", "step_message:1", "step_message:-1", "change_speed:0.1", "change_speed:-0.1", "stop:nil", "read:" .. conversation.bufs[offline.key], "read:" .. conversation.bufs[offline.key] })
+check("voice keys act", calls, { "read:" .. conversation.bufs[offline.key], "read:" .. conversation.bufs[offline.key], "read:" .. conversation.bufs[offline.key], "read:" .. conversation.bufs[offline.key], "change_speed:0.1", "change_speed:-0.1", "stop:nil", "read:" .. conversation.bufs[offline.key], "read:" .. conversation.bufs[offline.key] })
 for _, key in ipairs({ "v", "V", "y", "[", "]", "{", "}", "f", "d" }) do
     check("key " .. key .. " stays a motion/selection key", vim.fn.maparg(key, "n", false, true).buffer ~= 1, true)
 end
+-- with nothing playing, previous/next start reading around the last heard position
+local started = {}
+player.read = function(_, _, messages, idx) started[#started + 1] = { messages[1].id, idx } end
+player.run = nil
+player.last[offline.key] = nil
+press("O")
+local cursor_id = conversation.shown[conversation.bufs[offline.key]].spans[1] and started[1] and started[1][1]
+check("previous chunk with nothing heard plays the cursor message's last chunk", started[1] ~= nil and started[1][2], 0)
+player.last[offline.key] = { id = started[1][1], idx = 0 }
+press("A")
+check("previous message replays the last heard message", started[2], { started[1][1], 0 })
+press("a")
+check("next message starts after the last heard", started[3][1] > started[1][1], true)
+press("o")
+check("next chunk past the last chunk goes to the next message", started[4][1] > started[1][1], true)
+player.last[offline.key] = nil
 local real_run, picked = switch.run, 0
 switch.run = function() picked = picked + 1 end
 press("t")

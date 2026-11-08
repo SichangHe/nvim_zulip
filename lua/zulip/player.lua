@@ -167,7 +167,6 @@ local function finish(run)
     if vim.api.nvim_buf_is_valid(run.buf) then
         vim.api.nvim_buf_clear_namespace(run.buf, ns, 0, -1)
     end
-    M.last[run.key] = nil
     M.paint()
     return on_idle and on_idle()
 end
@@ -407,7 +406,7 @@ end
 function M.step_chunk(delta)
     local run = M.run
     if not run then
-        return vim.notify("zulip voice: nothing is playing; start with the play or read key")
+        return
     end
     if delta > 0 then
         if run.idx + 1 < run.items[run.i].n then
@@ -428,7 +427,7 @@ end
 function M.step_message(delta)
     local run = M.run
     if not run then
-        return vim.notify("zulip voice: nothing is playing; start with the play or read key")
+        return
     end
     if delta > 0 and run.items[run.i + 1] then
         if run.mark then
