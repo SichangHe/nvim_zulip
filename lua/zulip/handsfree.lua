@@ -71,7 +71,11 @@ function M.strip_end_word(text)
         while n > 0 and norm[n] == "over" do
             n = n - 1
         end
-        return n < last and table.concat(words, " ", 1, n) or nil
+        if n < last then
+            return table.concat(words, " ", 1, n)
+        end
+        local bare = text:match("^(.-)[%s%p]+[Oo]ver[%s%p]*$")
+        return bare or (normalize(text) == "over" and "" or nil)
     end
     for _, q in ipairs({ phrase, "over" }) do
         local k = #words_of(q)
@@ -124,6 +128,10 @@ end
 
 --- The end word was followed by silence: send what was said, then resume.
 local function finish(reply)
+    if reply.sent then
+        return
+    end
+    reply.sent = true
     M.reply = nil
     local text = M.strip_end_word(reply.text) or reply.text
     reply.text = text
@@ -178,6 +186,22 @@ local function switch_to(name)
     voice.earcon("ready")
 end
 
+--- `{ unit, delta }` when the whole utterance is a navigation command, else `nil`.
+function M.navigation(text)
+    local words = normalize(text):gsub("^pause ", "")
+    local commands = {
+        { "back", "chunk", -1 }, { "previous", "chunk", -1 }, { "again", "chunk", -1 }, { "repeat", "chunk", -1 },
+        { "previous message", "message", -1 }, { "back message", "message", -1 }, { "last message", "message", -1 },
+        { "next", "chunk", 1 }, { "skip", "chunk", 1 }, { "forward", "chunk", 1 },
+        { "next message", "message", 1 }, { "skip message", "message", 1 },
+    }
+    for _, command in ipairs(commands) do
+        if words == command[1] then
+            return { command[2], command[3] }
+        end
+    end
+end
+
 local function open(rest)
     local target = normalize(rest):match("^switch to (.+)$") or normalize(rest):match("^go to (.+)$") or normalize(rest):match("^open (.+)$")
     if target then
@@ -188,16 +212,16 @@ local function open(rest)
     if vim.api.nvim_buf_is_valid(reply.buf) then
         reply.base = vim.trim(table.concat(vim.api.nvim_buf_get_lines(reply.buf, 0, -1, false), "\n"))
     end
-    local command = normalize(rest)
+    local command = M.navigation(rest)
+    if command then
+        voice.log("voice control: navigation %s %d", command[1], command[2])
+        if reply.paused then
+            player.toggle_pause()
+        end
+        return ctx.step(command[1], command[2])
+    end
     if reply.paused then
         player.toggle_pause()
-    end
-    if command:match("^next$") or command:match("^skip$") or command:match("^forward$") then
-        resume(reply)
-        return player.step_message(1)
-    elseif command:match("^back$") or command:match("^previous$") or command:match("^again$") or command:match("^repeat$") then
-        resume(reply)
-        return player.step_message(-1)
     end
     M.reply = reply
     voice.earcon("ready")
@@ -225,6 +249,18 @@ function M.heard(text)
             voice.earcon("done")
             return require("zulip.conversation").open(choice[n])
         end
+    end
+    local command = M.reply and M.navigation(text)
+    if command then
+        voice.log("voice control: navigation %s %d inside a reply; draft kept, not sent", command[1], command[2])
+        local reply = M.reply
+        cancel_timer(reply)
+        M.reply = nil
+        if reply.paused and player.run and player.run.paused then
+            player.toggle_pause()
+        end
+        voice.earcon("done")
+        return reply.ctx.step(command[1], command[2])
     end
     if M.reply then
         voice.log("voice control: reply open, adding %q", text)

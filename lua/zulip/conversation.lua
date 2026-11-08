@@ -13,6 +13,8 @@ local M = {
     composes = {},
     --- Per message buffer: `spans`, each shown message's `{ id, first, last }` rows, `messages`, and `unread`, a set of message IDs.
     shown = {},
+    --- Per conversation key, the last message sent: `{ content, at_ms }`.
+    last_sent = {},
 }
 
 local function fail(err)
@@ -325,6 +327,11 @@ local function send(buf)
     if vim.b[buf].zulip_sending then
         return fail("still sending")
     end
+    local sent_before = M.last_sent[conversation.key]
+    if sent_before and sent_before.content == content and vim.uv.now() - sent_before.at_ms < 120000 then
+        return fail("the same message was just sent; not sending it twice")
+    end
+    M.last_sent[conversation.key] = { content = content, at_ms = vim.uv.now() }
     vim.b[buf].zulip_sending = true
     local params = conversation.stream_id
             and { type = "stream", to = conversation.stream_id, topic = conversation.topic, content = content }
@@ -335,6 +342,7 @@ local function send(buf)
         end
         vim.b[buf].zulip_sending = false
         if err then
+            M.last_sent[conversation.key] = nil
             return fail(err)
         end
         vim.api.nvim_buf_delete(buf, { force = true })
@@ -469,6 +477,9 @@ function M.open(conversation)
         vim.keymap.set("n", "gx", viz.open, { buffer = buf, desc = "Open the upload on this line" })
         local keys = config.voice.keys
         local handsfree_ctx = {
+            step = function(unit, delta)
+                step(buf, conversation, unit, delta)
+            end,
             compose = function()
                 M.compose(conversation)
                 return M.composes[conversation.key]

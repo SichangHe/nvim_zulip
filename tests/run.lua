@@ -119,6 +119,29 @@ vim.notify = notify
 handsfree.on = false
 for _, key in ipairs({ "5/terminal_viz", "5/nvim_omnigent" }) do vim.cmd("bwipeout! " .. conversation.bufs[key]) end
 sidebar.rows = saved_rows
+-- voice navigation and reply guarantees
+check("end word after a question and punctuation", handsfree.strip_end_word("How does that work? Over."), "How does that work?")
+check("navigation commands", { handsfree.navigation("Back."), handsfree.navigation("pause previous message"), handsfree.navigation("Next"), handsfree.navigation("go back to the start") }, { { "chunk", -1 }, { "message", -1 }, { "chunk", 1 }, nil })
+local steps, sends = {}, 0
+local compose_buf = vim.api.nvim_create_buf(false, false)
+vim.bo[compose_buf].buftype = "acwrite"
+vim.api.nvim_buf_set_name(compose_buf, "zulip-test-reply")
+vim.api.nvim_create_autocmd("BufWriteCmd", { buffer = compose_buf, callback = function() sends = sends + 1 end })
+handsfree.on = true
+handsfree.ctx = { compose = function() return compose_buf end, step = function(unit, delta) steps[#steps + 1] = unit .. delta end }
+handsfree.heard("Pause. Back.")
+check("start word plus back navigates", steps, { "chunk-1" })
+handsfree.heard("pause")
+handsfree.heard("I want to listen to earlier messages. How does that work? Over.")
+handsfree.heard("previous message")
+check("navigation inside an open reply acts as a command", steps, { "chunk-1", "message-1" })
+check("the draft is not sent by a command", sends, 0)
+handsfree.heard("pause")
+handsfree.heard("hello there over")
+vim.wait(2500, function() return sends > 0 end)
+handsfree.heard("Over.")
+check("exactly one send per reply", sends, 1)
+handsfree.on = false
 -- real key presses reach the voice actions; selection and motion keys stay unmapped
 conversation.open(offline)
 vim.api.nvim_set_current_buf(conversation.bufs[offline.key])
