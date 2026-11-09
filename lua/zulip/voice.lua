@@ -671,6 +671,13 @@ local function feed_frame(session, frame)
     session.threshold = math.max(config.voice.silence_rms, 3 * session.floor, 0.1 * session.hold)
     session.peak = math.max(session.peak, session.level)
     session.max_level = math.max(session.max_level, session.level)
+    session.sum_level = session.sum_level + session.level
+    local samples = require("ffi").cast("const int16_t*", frame)
+    for i = 0, math.floor(#frame / 2) - 1 do
+        if samples[i] >= 32000 or samples[i] <= -32000 then
+            session.clipped = session.clipped + 1
+        end
+    end
     if session.n_frames % 50 == 0 then
         log("frames=%d level=%d peak=%d floor=%d threshold=%d piece=%d", session.n_frames, session.level, session.peak, session.floor, session.threshold, #session.piece)
         session.peak = 0
@@ -737,6 +744,17 @@ local function settle(session)
         config.voice.device = "0"
         vim.notify("zulip voice: the default microphone did not open; switched to device 0, try again (:ZulipVoiceDevice picks another)", vim.log.levels.WARN)
     end
+    log("capture stats: %d frames, mean level %d, max %d, floor %d, %d clipped samples", session.n_frames, session.sum_level / math.max(session.n_frames, 1), session.max_level, session.floor, session.clipped)
+    if session.n_frames > 0 and not session.on_text then
+        local keep = {}
+        for i = math.max(1, #session.all - 1200 + 1), #session.all do
+            keep[#keep + 1] = session.all[i]
+        end
+        local dir = vim.fs.joinpath(vim.fn.stdpath("cache"), "zulip")
+        vim.fn.mkdir(dir, "p")
+        write_file(vim.fs.joinpath(dir, "last_dictation.wav"), wav(table.concat(keep)))
+        log("saved the last %d s of the capture to %s", #keep / 10, vim.fs.joinpath(dir, "last_dictation.wav"))
+    end
     log("recorder exited %d after %d frames; %d bytes unparsed; stderr %q", result.code, session.n_frames, #session.rest, vim.trim(result.stderr or ""))
     if session.cancelled or session.n_frames == 0 or session.max_level == 0 then
         if session.max_level == 0 and session.n_frames > 0 and not session.cancelled then
@@ -785,7 +803,7 @@ function M.record(buf, cmd, on_text)
     end
     local session = {
         buf = buf, on_text = on_text, started_ms = vim.uv.now(), level = 0, n_frames = 0, n_sent = 0, n_done = 0, next = 1,
-        results = {}, all = {}, max_level = 0, hold = 0, floor = 0, peak = 0, threshold = 0, piece = {}, preroll = {}, silent_ms = 0, timer = vim.uv.new_timer(), rest = "",
+        results = {}, all = {}, sum_level = 0, clipped = 0, max_level = 0, hold = 0, floor = 0, peak = 0, threshold = 0, piece = {}, preroll = {}, silent_ms = 0, timer = vim.uv.new_timer(), rest = "",
         mark = buf and vim.api.nvim_buf_set_extmark(buf, ns, row - 1, line == "" and 0 or math.min(col + 1, #line), { right_gravity = true }),
     }
     if on_text then
@@ -795,6 +813,7 @@ function M.record(buf, cmd, on_text)
         require("zulip.player").hold()
     end
     log("%s starts: %s", on_text and "listening" or "dictation", table.concat(cmd, " "))
+    log("playback at start (after hold): %s", require("zulip.player").describe())
     session.recorder = spawn(cmd, {
         stdin = true,
         text = false,

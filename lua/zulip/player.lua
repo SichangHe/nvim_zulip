@@ -13,6 +13,8 @@ local M = {
     on_idle = nil,
     --- Buffers whose window shows the status line.
     bufs = {},
+    --- Every player process alive, so dictation can silence all of them.
+    procs = {},
 }
 local ns = vim.api.nvim_create_namespace("zulip_player")
 local queued = {}
@@ -238,6 +240,7 @@ local function start_process(run, item, bundle)
     run.resume_ms = nil
     local started_ms = vim.uv.now()
     local speed = config.voice.speed
+    local proc_key = {}
     local cmd = { config.voice.play_cmd[1], "-ss", ("%.3f"):format(offset_ms / 1000) }
     if speed ~= 1 then
         -- `atempo` takes 0.5 to 2.0, so faster speeds chain two.
@@ -247,6 +250,7 @@ local function start_process(run, item, bundle)
     vim.list_extend(cmd, vim.list_slice(config.voice.play_cmd, 2))
     run.state = "playing"
     run.proc = voice.spawn(cmd, { stdin = bundle.bytes, text = false }, function(result)
+        M.procs[proc_key] = nil
         if M.run ~= run or run.gen ~= gen then
             return
         end
@@ -262,6 +266,7 @@ local function start_process(run, item, bundle)
         end
         item_done(run)
     end)
+    M.procs[proc_key] = run.proc
     run.timer = vim.uv.new_timer()
     run.timer:start(TICK_MS, TICK_MS, vim.schedule_wrap(function()
         if run.gen ~= gen then
@@ -462,8 +467,17 @@ function M.after_reading(fn)
     end
 end
 
+--- A short description of the playback state, for the log.
+function M.describe()
+    local run = M.run
+    return ("run=%s state=%s processes=%d autoplay=%s"):format(run and "yes" or "no", run and run.state or "-", vim.tbl_count(M.procs), tostring(config.voice.autoplay))
+end
+
 --- Hold playback while dictating.
 function M.hold()
+    for _, proc in pairs(M.procs) do
+        proc:kill(15)
+    end
     local run = M.run
     if run then
         run.held = true

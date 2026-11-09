@@ -53,3 +53,4 @@ tests: `tests/voice.lua` against the live service; speaker and microphone replac
 - reading: pause keeps `resume_ms` (position in the bundle); skipping forward marks the left message read; `play` from the cursor marks earlier messages read
 
 `lua/zulip/switch.lua`: `matches` ranks threads by squashed name (exact, prefix, substring, edit distance); `run` opens or asks via `vim.ui.select`; handsfree `switch_to` uses it and keeps `choice` for "first/second/third"
+    - dictation diagnostics: log lists playback state at start, capture stats (mean, max, floor, clipped samples); the last 2 min of raw audio is saved to `stdpath("cache")/zulip/last_dictation.wav`; `hold` kills every player process
