@@ -26,6 +26,7 @@ local handsfree_p = require("zulip.handsfree")
 config.voice.end_word = "kangaroo"
 check("misheard custom end word stripped", { handsfree_p.strip_end_word("Send this now. Cangaroo. Canguro."), handsfree_p.strip_end_word("Thanks kangaroo"), handsfree_p.strip_end_word("Nothing here"), handsfree_p.strip_end_word("I saw a cat") }, { "Send this now.", "Thanks", nil, nil })
 config.voice.start_word, config.voice.end_word = "attention", "kangaroo"
+check("over no longer ends a reply by default", handsfree_p.strip_end_word("it is over"), nil)
 check("default words work", { handsfree_p.after_start_word("Attention, hello"), handsfree_p.strip_end_word("hello Kangaroo.") }, { "hello", "hello" })
 config.voice.end_word = "over"
 check("short words stay exact", { handsfree_p.sounds_like("ever", "over"), handsfree_p.sounds_like("over", "over") }, { false, true })

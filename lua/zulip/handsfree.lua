@@ -99,7 +99,7 @@ function M.strip_end_word(text)
     end
     local k, last = #words_of(phrase), #words
     local function ends_here(upto)
-        return upto >= k and (M.sounds_like(table.concat(words, " ", upto - k + 1, upto), phrase) or normalize(table.concat(words, " ", upto - k + 1, upto)) == "over")
+        return upto >= k and (M.sounds_like(table.concat(words, " ", upto - k + 1, upto), phrase))
     end
     if not ends_here(last) then
         return nil
