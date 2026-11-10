@@ -624,7 +624,7 @@ local function drain(session)
 end
 
 --- Transcribe the speech `pcm` of `session` as the next piece.
-local VOICE_PROMPT = "Attention. Attention. Kangaroo." -- biases Whisper toward the hands-free control words
+local VOICE_PROMPT = "Attention. Attention. Tomato." -- biases Whisper toward the hands-free control words
 
 local function send_piece(session, pcm)
     if session.on_text and M.session then

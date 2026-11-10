@@ -108,7 +108,7 @@ local saved_rows = sidebar.rows
 sidebar.rows = threads
 local handsfree = require("zulip.handsfree")
 local cfg = require("zulip.config").voice
-check("default words", { cfg.start_word, cfg.end_word }, { "attention", "kangaroo" })
+check("default words", { cfg.start_word, cfg.end_word }, { "attention", "tomato" })
 cfg.start_word, cfg.end_word = "pause", "over"
 handsfree.on = true
 handsfree.heard("Pause, switch to terminal viz")
@@ -156,9 +156,9 @@ state.apply({ voice = { autoplay = true } })
 check("saved settings load", { vconfig.speed, vconfig.device, state.handsfree }, { 1.7, "Test Mic", true })
 vconfig.start_word, vconfig.end_word = "pause", "over"
 state.save()
-vconfig.start_word, vconfig.end_word = "attention", "kangaroo"
+vconfig.start_word, vconfig.end_word = "attention", "tomato"
 state.apply({})
-check("a saved old default word pair is migrated", { vconfig.start_word, vconfig.end_word }, { "attention", "kangaroo" })
+check("a saved old default word pair is migrated", { vconfig.start_word, vconfig.end_word }, { "attention", "tomato" })
 check("explicit option wins over saved", vconfig.autoplay, true)
 vconfig.speed, vconfig.device, vconfig.autoplay = 1, "auto", true
 state.handsfree = false
