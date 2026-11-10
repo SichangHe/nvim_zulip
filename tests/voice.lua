@@ -21,6 +21,12 @@ check("pending-item footers are not read", vim.tbl_map(function(b) return b.spee
 check("footer headings", { voice.is_footer_heading("pending items resolved:"), voice.is_footer_heading("Pending item deleted:"), voice.is_footer_heading("pending thing") }, { true, true, false })
 check("long paragraph splits", #voice.chunks(voice.blocks(("Word word word. "):rep(40))), 3)
 
+-- phonetic end word: a custom end word misheard
+local handsfree_p = require("zulip.handsfree")
+config.voice.end_word = "kangaroo"
+check("misheard custom end word stripped", { handsfree_p.strip_end_word("Send this now. Cangaroo. Canguro."), handsfree_p.strip_end_word("Thanks kangaroo"), handsfree_p.strip_end_word("Nothing here"), handsfree_p.strip_end_word("I saw a cat") }, { "Send this now.", "Thanks", nil, nil })
+config.voice.end_word = "over"
+check("short words stay exact", { handsfree_p.sounds_like("ever", "over"), handsfree_p.sounds_like("over", "over") }, { false, true })
 if not vim.env.ZULIPRC then
     os.exit(failures == 0 and 0 or 1)
 end

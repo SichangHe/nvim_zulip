@@ -35,6 +35,26 @@ local function edit_distance(a, b)
     return d[#a][#b]
 end
 
+--- A rough sound of `text`: c, q, ck as k, ph as f, z as s, x as ks, h dropped, vowels merged, doubled letters collapsed.
+function M.phonetic(text)
+    local s = text:lower():gsub("[^a-z]", "")
+    s = s:gsub("ph", "f"):gsub("ck", "k"):gsub("[cq]", "k"):gsub("z", "s"):gsub("x", "ks"):gsub("h", ""):gsub("[aeiouy]", "a")
+    return (s:gsub("(.)%1+", "%1"))
+end
+
+--- Whether `heard` sounds like `wanted`. Short words (sound of 4 letters or fewer) must match exactly, since fuzzy
+--- matching them would catch ordinary words; longer ones tolerate an edit distance of a third of their length, at most 2.
+function M.sounds_like(heard, wanted)
+    local a, b = M.phonetic(heard), M.phonetic(wanted)
+    if a == "" or b == "" then
+        return false
+    end
+    if #b <= 4 then
+        return a == b and normalize(heard) == normalize(wanted)
+    end
+    return edit_distance(a, b) <= math.min(2, math.floor(#b / 3))
+end
+
 local function words_of(text)
     return vim.split(vim.trim(text), "%s+", { trimempty = true })
 end
@@ -46,7 +66,7 @@ function M.after_start_word(text)
     local words, i = words_of(text), 1
     local function is_start(w)
         w = normalize(w)
-        return w ~= "" and (vim.list_contains(accepted, w) or edit_distance(w, word) <= (#word >= 5 and 1 or 0))
+        return w ~= "" and (vim.list_contains(accepted, w) or edit_distance(w, word) <= (#word >= 5 and 1 or 0) or M.sounds_like(w, word))
     end
     if not (words[1] and is_start(words[1])) then
         return nil
@@ -77,12 +97,17 @@ function M.strip_end_word(text)
         local bare = text:match("^(.-)[%s%p]+[Oo]ver[%s%p]*$")
         return bare or (normalize(text) == "over" and "" or nil)
     end
-    for _, q in ipairs({ phrase, "over" }) do
-        local k = #words_of(q)
-        if q ~= "" and #words >= k and edit_distance(normalize(table.concat(words, " ", #words - k + 1)), q) <= math.floor(#q / 6) then
-            return table.concat(words, " ", 1, #words - k)
-        end
+    local k, last = #words_of(phrase), #words
+    local function ends_here(upto)
+        return upto >= k and (M.sounds_like(table.concat(words, " ", upto - k + 1, upto), phrase) or normalize(table.concat(words, " ", upto - k + 1, upto)) == "over")
     end
+    if not ends_here(last) then
+        return nil
+    end
+    while ends_here(last) do
+        last = last - k
+    end
+    return table.concat(words, " ", 1, last)
 end
 
 local function cancel_timer(reply)
