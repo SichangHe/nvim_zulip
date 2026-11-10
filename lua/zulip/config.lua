@@ -38,8 +38,8 @@ return {
         record_cmd = nil,
         --- Hands-free voice control: say `start_word` to pause and open a reply, finish with `end_word` (or
         --- `long_silence_s` of silence) to send it and resume; a pause with nothing said resumes after `empty_s`.
-        start_word = "pause",
-        end_word = "over",
+        start_word = "attention",
+        end_word = "kangaroo",
         long_silence_s = 6,
         empty_s = 8,
         --- Playback speed, 0.5 to 3.0 in steps of 0.1; `play_cmd` must accept `-af` filters for speeds other than 1.

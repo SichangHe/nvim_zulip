@@ -1,6 +1,6 @@
 --- Hands-free voice control, as the web client's: the microphone stays open, a piece of speech starting with the start word
 --- pauses reading and opens a reply that is typed live into the compose buffer; the end word followed by silence (or a long
---- silence) sends it and resumes reading. `pause next` and `pause back` skip by message.
+--- silence) sends it and resumes reading. "<start word> next" and "<start word> back" skip.
 local config = require("zulip.config")
 local player = require("zulip.player")
 local voice = require("zulip.voice")
@@ -172,7 +172,7 @@ local function finish(reply)
 end
 
 local function add(reply, heard)
-    reply.text = vim.trim(reply.text .. " " .. heard:gsub("^%s*[Pp]ause[%s%p]*", ""))
+    reply.text = vim.trim(reply.text .. " " .. (M.after_start_word(heard) or heard))
     show(reply)
     local ms = M.strip_end_word(reply.text) and RESUME_SILENCE_MS or config.voice.long_silence_s * 1000
     if reply.text ~= "" and ms > 0 then
@@ -213,7 +213,7 @@ end
 
 --- `{ unit, delta }` when the whole utterance is a navigation command, else `nil`.
 function M.navigation(text)
-    local words = normalize(text):gsub("^pause ", "")
+    local words = normalize(M.after_start_word(text) or text)
     local commands = {
         { "back", "chunk", -1 }, { "previous", "chunk", -1 }, { "again", "chunk", -1 }, { "repeat", "chunk", -1 },
         { "previous message", "message", -1 }, { "back message", "message", -1 }, { "last message", "message", -1 },

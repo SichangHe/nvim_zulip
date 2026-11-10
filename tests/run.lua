@@ -107,6 +107,9 @@ check("no match", switch.matches("banana", threads), {})
 local saved_rows = sidebar.rows
 sidebar.rows = threads
 local handsfree = require("zulip.handsfree")
+local cfg = require("zulip.config").voice
+check("default words", { cfg.start_word, cfg.end_word }, { "attention", "kangaroo" })
+cfg.start_word, cfg.end_word = "pause", "over"
 handsfree.on = true
 handsfree.heard("Pause, switch to terminal viz")
 check("voice switch opens the thread", vim.api.nvim_get_current_buf(), conversation.bufs["5/terminal_viz"])
@@ -121,7 +124,7 @@ vim.notify = notify
 handsfree.on = false
 for _, key in ipairs({ "5/terminal_viz", "5/nvim_omnigent" }) do vim.cmd("bwipeout! " .. conversation.bufs[key]) end
 sidebar.rows = saved_rows
--- voice navigation and reply guarantees
+-- voice navigation and reply guarantees (with the words "pause" and "over")
 check("end word after a question and punctuation", handsfree.strip_end_word("How does that work? Over."), "How does that work?")
 check("navigation commands", { handsfree.navigation("Back."), handsfree.navigation("pause previous message"), handsfree.navigation("Next"), handsfree.navigation("go back to the start") }, { { "chunk", -1 }, { "message", -1 }, { "chunk", 1 }, nil })
 local steps, sends = {}, 0
@@ -151,6 +154,11 @@ state.save(true)
 vconfig.speed, vconfig.autoplay, vconfig.device = 1, true, "auto"
 state.apply({ voice = { autoplay = true } })
 check("saved settings load", { vconfig.speed, vconfig.device, state.handsfree }, { 1.7, "Test Mic", true })
+vconfig.start_word, vconfig.end_word = "pause", "over"
+state.save()
+vconfig.start_word, vconfig.end_word = "attention", "kangaroo"
+state.apply({})
+check("a saved old default word pair is migrated", { vconfig.start_word, vconfig.end_word }, { "attention", "kangaroo" })
 check("explicit option wins over saved", vconfig.autoplay, true)
 vconfig.speed, vconfig.device, vconfig.autoplay = 1, "auto", true
 state.handsfree = false

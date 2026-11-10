@@ -22,7 +22,8 @@ function M.apply(opts)
     local saved = M.load()
     M.handsfree = saved.handsfree == true
     for _, field in ipairs(FIELDS) do
-        if saved[field] ~= nil and not (opts and opts.voice and opts.voice[field] ~= nil) then
+        local old_default = (field == "start_word" and saved[field] == "pause") or (field == "end_word" and saved[field] == "over")
+        if saved[field] ~= nil and not old_default and not (opts and opts.voice and opts.voice[field] ~= nil) then
             config.voice[field] = saved[field]
         end
     end

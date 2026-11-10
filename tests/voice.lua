@@ -25,6 +25,8 @@ check("long paragraph splits", #voice.chunks(voice.blocks(("Word word word. "):r
 local handsfree_p = require("zulip.handsfree")
 config.voice.end_word = "kangaroo"
 check("misheard custom end word stripped", { handsfree_p.strip_end_word("Send this now. Cangaroo. Canguro."), handsfree_p.strip_end_word("Thanks kangaroo"), handsfree_p.strip_end_word("Nothing here"), handsfree_p.strip_end_word("I saw a cat") }, { "Send this now.", "Thanks", nil, nil })
+config.voice.start_word, config.voice.end_word = "attention", "kangaroo"
+check("default words work", { handsfree_p.after_start_word("Attention, hello"), handsfree_p.strip_end_word("hello Kangaroo.") }, { "hello", "hello" })
 config.voice.end_word = "over"
 check("short words stay exact", { handsfree_p.sounds_like("ever", "over"), handsfree_p.sounds_like("over", "over") }, { false, true })
 if not vim.env.ZULIPRC then
@@ -225,6 +227,7 @@ vim.wait(500)
 check("not sent twice", #writes, 1)
 
 -- hands-free voice control
+config.voice.start_word, config.voice.end_word = "pause", "over"
 local handsfree = require("zulip.handsfree")
 check("start word", { handsfree.after_start_word("Pause, hello there"), handsfree.after_start_word("paws"), handsfree.after_start_word("hello pause") }, { "hello there", "", nil })
 check("start word variants", { handsfree.after_start_word("Pulse. Pulse. hello"), handsfree.after_start_word("polls") }, { "hello", "" })
