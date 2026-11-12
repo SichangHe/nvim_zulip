@@ -46,7 +46,9 @@ function M.status_line()
     end
     local control = require("zulip.handsfree").label()
     if control then
-        parts[#parts + 1] = control
+        parts[#parts + 1] = control .. " (" .. config.voice.keys.handsfree .. " to stop)"
+    else
+        parts[#parts + 1] = "voice control off (" .. config.voice.keys.handsfree .. " to start)"
     end
     parts[#parts + 1] = ("%.1fx"):format(config.voice.speed)
     if run then
@@ -57,7 +59,7 @@ function M.status_line()
     if dictation == "recording" then
         parts[#parts + 1] = "<CR> in compose sends · <Esc> cancels · " .. keys.dictate .. " stops"
     else
-        parts[#parts + 1] = ("%s play · %s/%s chunk · %s/%s msg · %s/%s speed · %s voice · %s switch · %s stop · %s? more"):format(keys.play, keys.next_chunk, keys.prev_chunk, keys.next_message, keys.prev_message, keys.faster, keys.slower, keys.handsfree, keys.switch, keys.stop, keys.prefix)
+        parts[#parts + 1] = keys.prefix .. "? keys"
     end
     return " " .. table.concat(parts, " · "):gsub("%%", "%%%%")
 end
