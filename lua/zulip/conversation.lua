@@ -49,7 +49,9 @@ function M.render(messages, new_id, site)
     return lines, new_row, spans
 end
 
---- Dim the pending-item footers (`pending item created:` and their bullets) with the `Comment` highlight.
+vim.api.nvim_set_hl(0, "ZulipFooter", { default = true, italic = true })
+
+--- Dim the pending-item footers (`pending item created:` and their bullets) with the `ZulipFooter` highlight (italic only: `Comment` is ~2.4:1 contrast on light themes and made them unreadable).
 function M.dim_footers(buf, lines)
     local ns = vim.api.nvim_create_namespace("zulip_footers")
     vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
@@ -61,7 +63,7 @@ function M.dim_footers(buf, lines)
             footer = false
         end
         if footer and vim.trim(line) ~= "" then
-            vim.api.nvim_buf_set_extmark(buf, ns, row - 1, 0, { end_row = row, hl_group = "Comment", hl_eol = true })
+            vim.api.nvim_buf_set_extmark(buf, ns, row - 1, 0, { end_row = row, hl_group = "ZulipFooter", hl_eol = true })
         end
     end
 end
