@@ -882,6 +882,34 @@ function M.unlisten()
     end
 end
 
+M.priorities = {}
+local priorities_at = 0
+
+--- Ask the service for the human manager's topic priorities (at most every 5 minutes); `on_change()` runs when they arrive and differ.
+function M.refresh_priorities(on_change)
+    if vim.uv.now() - priorities_at < 300000 then
+        return
+    end
+    priorities_at = vim.uv.now()
+    with_relay(function() end, function()
+        call("ping", { t = vim.uv.now() }, function(err, result)
+            if err or type(result) ~= "table" or type(result.priorities) ~= "table" then
+                return
+            end
+            local fresh = {}
+            for topic, number in pairs(result.priorities) do
+                if type(number) == "number" then
+                    fresh[topic] = number
+                end
+            end
+            if vim.inspect(fresh) ~= vim.inspect(M.priorities) then
+                M.priorities = fresh
+                on_change()
+            end
+        end)
+    end)
+end
+
 --- Report whether the player, the recorder (with its microphone level) and the service work.
 function M.check()
     local lines = {}

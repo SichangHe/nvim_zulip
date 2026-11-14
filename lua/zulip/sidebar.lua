@@ -68,10 +68,23 @@ function M.conversations(messages, my_id)
             conversation.n_unread = conversation.n_unread + 1
         end
     end
+    M.sort(list)
+    return list
+end
+
+--- Human-manager priorities (topic -> number; lower first, unset last), then newest first.
+function M.sort(list)
+    local prio = require("zulip.voice").priorities
+    local function rank(c)
+        return c.topic and prio[c.topic] or math.huge
+    end
     table.sort(list, function(a, b)
+        local ra, rb = rank(a), rank(b)
+        if ra ~= rb then
+            return ra < rb
+        end
         return a.newest_id > b.newest_id
     end)
-    return list
 end
 
 local function fail(err)
@@ -100,6 +113,16 @@ local function render(conversations)
             vim.api.nvim_win_set_cursor(win, { row, 0 })
         end
     end
+end
+
+--- Fetch priorities from the voice service (once, and every 5 minutes) and reorder the list.
+local function refresh_priorities()
+    require("zulip.voice").refresh_priorities(function()
+        if #M.rows > 0 then
+            M.sort(M.rows)
+            render(M.rows)
+        end
+    end)
 end
 
 --- Fetch the newest messages, redraw the list,
@@ -149,6 +172,7 @@ function M.refresh()
             end
             local conversations = M.conversations(reply.messages, api.account.user_id)
             render(conversations)
+            refresh_priorities()
             require("zulip.conversation").reload_changed(conversations)
             if M.pending then
                 M.pending = false
