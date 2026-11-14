@@ -66,7 +66,14 @@ function M.show(buf)
         for _, upload in ipairs(M.uploads(line)) do
             local function place(file)
                 if config.previews and vim.api.nvim_buf_is_valid(buf) then
-                    image.placement.new(buf, file, { pos = { row, 0 }, inline = true })
+                    local win = vim.fn.bufwinid(buf)
+                    local width = vim.o.columns
+                    if win ~= -1 then
+                        local info = vim.fn.getwininfo(win)[1]
+                        width = info.width - info.textoff
+                    end
+                    -- scale down to fit the window width
+                    image.placement.new(buf, file, { pos = { row, 0 }, inline = true, max_width = math.max(1, width - 2) })
                 end
             end
             if IMAGE[upload.ext] then
