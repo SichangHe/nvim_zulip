@@ -885,9 +885,9 @@ end
 M.priorities = {}
 local priorities_at = 0
 
---- Ask the service for the human manager's topic priorities (at most every 5 minutes); `on_change()` runs when they arrive and differ.
+--- Ask the service for the human manager's topic priorities (at most every minute); `on_change()` runs when they arrive and differ.
 function M.refresh_priorities(on_change)
-    if vim.uv.now() - priorities_at < 300000 then
+    if vim.uv.now() - priorities_at < 60000 then
         return
     end
     priorities_at = vim.uv.now()
