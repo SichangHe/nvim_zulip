@@ -14,6 +14,22 @@ local function check(name, got, want)
 end
 
 check("parse_zuliprc", { api.parse_zuliprc({ "[api]", "email=a@b.c", "key = k1", "site=https://x.zulipchat.com/" }) }, { { email = "a@b.c", key = "k1", site = "https://x.zulipchat.com" } })
+do -- 🧑 "The speech drops numbers. E.g. 6.0% gets pronounced as zero percent": same strings as the service's text.mjs, so the pre-rendered audio matches
+    local speech = require("zulip.voice")._speech_text
+    for _, case in ipairs({
+        { "It allows ~2%/hour.", "It allows about 2 percent per hour." },
+        { "Use ~6.0%.", "Use about 6%." },
+        { "Roughly ≈6.0% of cases.", "Roughly about 6% of cases." },
+        { "From 1–2% to 6.0–8.0%.", "From 1 to 2% to 6 to 8%." },
+        { "Went 3%→8% today.", "Went 3% to 8% today." },
+        { "It is <6% now, >4% then.", "It is less than 6% now, more than 4% then." },
+        { "10k users, 2.5M events, ratio 3:1, at 12:30.", "10 thousand users, 2.5 million events, ratio 3 to 1, at 12:30." },
+        { "On 2026-11-17, v2.0 had 6.5% and 3.5 seconds.", "On 2026-11-17, v2.0 had 6.5% and 3.5 seconds." },
+        { "Use <br> tags and a>b, in ~/bin.", "Use <br> tags and a>b, in ~/bin." },
+    }) do
+        check("speech " .. case[1], speech(case[1]), case[2])
+    end
+end
 check("parse_zuliprc incomplete", { api.parse_zuliprc({ "email=a@b.c" }) }, { nil, "no `key`" })
 local me, other = { id = 1, full_name = "Me" }, { id = 2, full_name = "Other" }
 check("conversations", sidebar.conversations({

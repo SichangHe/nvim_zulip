@@ -44,6 +44,42 @@ function log(format, ...)
     end
 end
 
+--- Seconds-per-unit words for "%/hour" style rates.
+local UNIT_WORDS = { hr = "hour", h = "hour", mo = "month", yr = "year", min = "minute", sec = "second", s = "second" }
+local UNITS = { "hour", "hr", "h", "day", "week", "month", "mo", "year", "yr", "minute", "min", "second", "sec", "s" }
+
+--- Spoken form of numbers next to symbols; the same rules, in the same order, as `speakNumbers` in the service's `text.mjs`
+--- (the speech engine drops or garbles "~2%/hour", "≈6.0%", "6.0–8.0%", "3%→8%"; the strings must match the pre-rendered audio's).
+local function speak_numbers(t)
+    local SIGN = "[%+%-]?"
+    for _, mark in ipairs({ "~", "≈", "∼" }) do   -- a Lua class `[≈∼]` would match single bytes of multibyte characters, so one pattern per mark
+        t = t:gsub(mark .. "%s?(" .. SIGN .. "%$?%d)", "about %1"):gsub(mark .. "%s?(−%$?%d)", "about %1")
+    end
+    t = t:gsub("%s?→%s?", " to "):gsub("%s?⇒%s?", " to "):gsub("%s?%->%s?", " to ")
+    t = t:gsub("^<%s?(%$?%d)", "less than %1"):gsub("([%s(])<%s?(%$?%d)", "%1less than %2")
+    t = t:gsub("^>%s?(%$?%d)", "more than %1"):gsub("([%s(])>%s?(%$?%d)", "%1more than %2")
+    for _, dash in ipairs({ "–", "—" }) do
+        for _ = 1, 2 do   -- a match ends on the digit the next one starts with: chains ("1–2–3") need a second pass
+            t = t:gsub("(%d)%s?" .. dash .. "%s?(" .. SIGN .. "%$?%d)", "%1 to %2")
+        end
+    end
+    t = t:gsub("(%d+%.?%d*)%s?%-%s?(%d+%.?%d*%s?%%)", "%1 to %2")
+    for _ = 1, 2 do
+        t = t:gsub("(%d)%.0+(%s?%%)", "%1%2"):gsub("(%d)%.0+(%s+to%s+" .. SIGN .. "%d)", "%1%2")
+    end
+    t = t:gsub("(%d%.?%d*)%s?[kK]([^%w%-])", "%1 thousand%2"):gsub("(%d%.?%d*)%s?[kK]$", "%1 thousand")
+    t = t:gsub("(%d%.?%d*)M([^%w%-])", "%1 million%2"):gsub("(%d%.?%d*)M$", "%1 million")
+    t = t:gsub("(%f[%d]%d%d?%d?):(%d)(%f[^%d:])", "%1 to %2%3"):gsub("(%f[%d]%d%d?%d?):(%d)$", "%1 to %2")
+    for _, unit in ipairs(UNITS) do
+        t = t:gsub("%%%s?/%s?(" .. unit .. ")(%f[^%w])", function(u, rest)
+            return " percent per " .. (UNIT_WORDS[u:lower()] or u:lower()) .. rest
+        end):gsub("%%%s?/%s?(" .. unit .. ")$", function(u)
+            return " percent per " .. (UNIT_WORDS[u:lower()] or u:lower())
+        end)
+    end
+    return t
+end
+
 --- What a speech engine should say for Markdown `text` (same cleaning as the service's `text.mjs`).
 local function speech_text(text)
     text = text:gsub("!?%[([^%]]*)%]%([^)]*%)", "%1"):gsub("https?://%S+", "link"):gsub("`([^`]*)`", "%1")
@@ -51,7 +87,13 @@ local function speech_text(text)
     for _ = 1, 2 do
         text = text:gsub("(%w)_(%w)", "%1 %2")
     end
-    return vim.trim(text:gsub("^>%s?", ""):gsub("%s+", " "))
+    text = speak_numbers(text:gsub("^>%s?", ""))
+    return vim.trim(text:gsub("%s+", " "))
+end
+
+--- For tests: the speech string of Markdown `text`.
+function M._speech_text(text)
+    return speech_text(text)
 end
 
 --- Sentence groups of at most `MAX_CHUNK_CHARS` characters (one speech chunk each) in `text`.
