@@ -322,6 +322,8 @@ local function call(op, fields, on_done)
 end
 
 M.log = log
+--- The log lines so far (tests).
+function M.log_lines() return log_ring end
 
 --- Send the remembered debugging lines to the service's `client.log`, in parts of at most 9000 characters.
 function M.send_log()

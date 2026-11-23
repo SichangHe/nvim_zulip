@@ -255,6 +255,7 @@ end })
 handsfree.toggle({ compose = function() return reply_buf end })
 check("voice control on", wait(function() return handsfree.on end), true)
 check("reply sent after the end word and silence", wait(function() return #sent_replies > 0 end), true)
+if #sent_replies == 0 or os.getenv("DUMP") then print(table.concat(voice.log_lines(), "\n", math.max(1, #voice.log_lines() - 60))) end
 local sent_text = (sent_replies[1] or ""):lower()
 check("reply is the dictation without start and end words", { sent_text:find("spoken reply", 1, true) ~= nil, sent_text:find("over", 1, true), sent_text:find("^pause")  }, { true, nil, nil })
 handsfree.toggle()
