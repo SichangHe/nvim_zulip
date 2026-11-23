@@ -360,6 +360,10 @@ local spawn = M.spawn
 
 --- Speech for `texts` (a few chunks) in one request, as a bundle starting at chunk `first_idx`; `on_done(err, bundle)`.
 function M.tts(texts, first_idx, on_done)
+    local local_tts = require("zulip.local_tts")
+    if local_tts.enabled() then
+        return local_tts.tts(texts, first_idx, on_done)
+    end
     with_relay(on_done, function()
         call("tts", { texts = texts }, function(err, result)
             if err then

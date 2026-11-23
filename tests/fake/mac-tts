@@ -1,0 +1,8 @@
+#!/bin/sh
+# Stand-in for mac-tts --lines DIR on machines without it: each line becomes a WAV whose length is 50 ms per character.
+[ "$1" = --lines ] || exit 2
+mkdir -p "$2"; echo ready; n=0
+while IFS= read -r line; do
+  ms=$(( ${#line} * 50 )); ffmpeg -loglevel quiet -y -f lavfi -i "sine=frequency=440:duration=$(awk "BEGIN{print $ms/1000}")" -ar 24000 -ac 1 -c:a pcm_s16le "$2/$n.wav"
+  echo "$2/$n.wav"; n=$((n+1))
+done

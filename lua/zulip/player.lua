@@ -190,7 +190,8 @@ local function get_bundle(item, idx, on_done)
     local function has(bundle)
         return idx >= bundle.firstIdx and idx < bundle.firstIdx + #bundle.texts
     end
-    local bundle = voice.bundle_for(item.message.id, idx) or vim.iter(item.local_bundles):find(has)
+    -- with local speech, the service's pre-rendered audio is skipped: downloading it is the latency local speech avoids
+    local bundle = (not require("zulip.local_tts").enabled() and voice.bundle_for(item.message.id, idx)) or vim.iter(item.local_bundles):find(has)
     if bundle then
         return voice.fetch(bundle, function(err)
             on_done(err, bundle)

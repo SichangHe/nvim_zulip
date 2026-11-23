@@ -60,6 +60,8 @@ A new message from someone else with a `[switch: TASK]` line opens that task's c
 
 Voice settings (autoplay, speed, follow, voice control on/off, microphone, start and end words, silence times) are remembered in `stdpath("state")/zulip_voice.json`; options you pass to `setup` win over them. Options are `voice` in [`config.lua`](lua/zulip/config.lua): `play_cmd` (must accept `-ss SECONDS` after the program name), `record_cmd`, `device`, `pause_ms`, `silence_rms`. On macOS `voice.device = "auto"` (default) picks the first real microphone (names with "Microphone" first; BlackHole, Zoom, Loopback and similar virtual devices are skipped) that delivers a signal, probing each for 0.5 s once. To choose by name: `voice = { device = "MacBook Pro Microphone" }`, or `:ZulipVoiceDevice` to list and pick (`:ZulipVoiceDevice NAME` sets one). A microphone that delivers only zeros is reported with the device list, and the next dictation probes again.
 
+Local speech: on a Mac with [mac_tts](https://github.com/SichangHe/mac_tts) installed, `voice.local_tts = { "mac-tts" }` makes the speech on the laptop (through `via` too) instead of downloading it from the service
+
 If Neovim runs on a remote machine without audio, set `voice.via = { "ssh", "-p", "2222", "localhost" }` with `RemoteForward 2222 localhost:22` in the laptop's SSH config, so the audio commands run on the laptop.
 
 ## Limits
