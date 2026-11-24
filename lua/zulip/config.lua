@@ -46,10 +46,10 @@ return {
         --- `long_silence_s` of silence) to send it and resume; a pause with nothing said resumes after `empty_s`.
         start_word = "attention",
         end_word = "tomato",
-        --- Command mode, as in the web app: `command_word` then commands ("katana, skip backward three", "katana, switch to terminal").
+        --- Command mode, as in the web app: `command_word` then commands ("potato, skip backward three", "potato, switch to terminal").
         --- A reply ending in `cancel_word` (or "cancel", "never mind", "scratch that", "forget it") is discarded, as in the web app.
-        command_word = "katana",
-        cancel_word = "macaroni",
+        command_word = "potato",
+        cancel_word = "tornado",
         --- Speak command confirmations ("back three") before acting, as the web app does.
         say_commands = true,
         long_silence_s = 6,

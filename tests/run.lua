@@ -77,24 +77,24 @@ do -- command mode and cancel word, the web app's grammar
     handsfree.on, handsfree.ctx = true, { step = function(unit, delta) steps[#steps + 1] = unit .. delta end, compose = function() return vim.api.nvim_create_buf(false, true) end }
     local notify = vim.notify
     vim.notify = function() end
-    handsfree.heard("Katana, skip backward three.")
+    handsfree.heard("Potato, skip backward three.")
     check("spoken command word runs the commands", steps, { "chunk-1", "chunk-1", "chunk-1" })
     steps = {}
-    handsfree.heard("Katana.")
+    handsfree.heard("Potato.")
     handsfree.heard("Previous message.")
     check("command word alone, then the command", steps, { "message-1" })
     handsfree.heard("Attention, this reply is wrong. Cancel.")
     check("start word, reply and cancel word in one breath: nothing kept", handsfree.reply, nil)
     handsfree.heard("Attention, this reply")
-    handsfree.heard("is also wrong. Macaroni.")
+    handsfree.heard("is also wrong. Tornado.")
     check("cancel word discards an open reply", handsfree.reply, nil)
-    check("cancel phrases", { handsfree.ends_with_cancel("Some words. Never mind."), handsfree.ends_with_cancel("Cancel the meeting tomorrow."), handsfree.ends_with_cancel("Okay. Macaroni") }, { true, false, true })
+    check("cancel phrases", { handsfree.ends_with_cancel("Some words. Never mind."), handsfree.ends_with_cancel("Cancel the meeting tomorrow."), handsfree.ends_with_cancel("Okay. Tornado") }, { true, false, true })
     local played, earcon = {}, v.earcon
     v.earcon = function(kind) played[#played + 1] = kind end
     handsfree.heard("Attention, a reply")
     vim.wait(5800, function() return vim.tbl_contains(played, "pulseInput") end, 100)
     check("mode beat after 5 s of silence in a reply", vim.tbl_contains(played, "pulseInput"), true)
-    handsfree.heard("Macaroni.")
+    handsfree.heard("Tornado.")
     v.earcon = earcon
     handsfree.stop_pulse()
     vim.notify, handsfree.on = notify, false
