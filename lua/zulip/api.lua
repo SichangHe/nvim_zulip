@@ -41,7 +41,7 @@ local function request(account, method, path, params, on_done, timeout_seconds)
     local stdin = ('user = "%s:%s"\n'):format(account.email, account.key)
     return vim.system(cmd, { text = true, stdin = stdin }, vim.schedule_wrap(function(result)
         if result.code ~= 0 then
-            return on_done(vim.trim(result.stderr))
+            return on_done(vim.trim(result.stderr), nil, true)   -- third value: the network failed (no answer from the server)
         end
         local ok, reply = pcall(vim.json.decode, result.stdout, { luanil = { object = true, array = true } })
         if not ok then

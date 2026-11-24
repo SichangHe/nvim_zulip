@@ -203,6 +203,11 @@ function M.refresh()
             render(conversations)
             refresh_priorities()
             refresh_muted(M.refresh)
+            local conv = require("zulip.conversation")
+            if conv.outbox_count() > 0 then   -- the server answered: send what waited offline
+                conv.outbox_flush()
+                conv.outbox_start()
+            end
             require("zulip.conversation").reload_changed(conversations)
             if M.pending then
                 M.pending = false

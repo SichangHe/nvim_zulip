@@ -37,6 +37,31 @@ do -- 🧑 "the web app is able to highlight only the sentence being spoken": th
     check("sentence ranges", { p.chunk_range(lines, it, 1, 1), p.chunk_range(lines, it, 1, 2), p.chunk_range(lines, it, 1, 3) }, { { 0, 0, 0, 74 }, { 0, 75, 1, 26 }, { 1, 27, 1, 49 } })
     check("sentence from elapsed share", { p.sentence_at(it.chunks[2], 0.1), p.sentence_at(it.chunks[2], 0.6), p.sentence_at(it.chunks[2], 0.95) }, { 1, 2, 3 })
 end
+do -- offline outbox, as in the web app: a send with no connection is queued and sent when the server answers
+    local real = api.request
+    local online, posted = false, {}
+    api.request = function(method, path, params, on_done)
+        if path == "/messages" and method == "POST" then
+            if not online then
+                return vim.schedule(function() on_done("Could not resolve host", nil, true) end)
+            end
+            posted[#posted + 1] = params.content
+            return vim.schedule(function() on_done(nil, { result = "success" }) end)
+        end
+        return real(method, path, params, on_done)
+    end
+    local notify = vim.notify
+    vim.notify = function() end
+    conversation.outbox_add({ type = "stream", to = 1, topic = "t", content = "queued hello" }, "t")
+    conversation.outbox_flush()
+    vim.wait(200)
+    check("still queued while offline", conversation.outbox_count(), 1)
+    online = true
+    conversation.outbox_flush()
+    vim.wait(2000, function() return conversation.outbox_count() == 0 end)
+    check("sent when back online", { conversation.outbox_count(), posted[1] }, { 0, "queued hello" })
+    vim.notify, api.request = notify, real
+end
 do -- command mode and cancel word, the web app's grammar
     local commands, handsfree = require("zulip.commands"), require("zulip.handsfree")
     local function kinds(text) return vim.tbl_map(function(c) return c.kind == "nav" and ("%s%d%s%s"):format(c.kind, c.nav.dir, c.nav.whole and "m" or "", c.nav.count) or c.kind end, (commands.parse(commands.split(text), "cancel"))) end
@@ -351,7 +376,8 @@ end), true)
 vim.cmd("bwipeout!")
 sidebar.refresh()
 check("sidebar lists the conversation", vim.wait(20000, function()
-    return sidebar.rows[1] and sidebar.rows[1].key == myself.key
+    -- listed, not necessarily first: conversations with a task priority sort ahead of direct messages
+    return vim.iter(sidebar.rows):any(function(r) return r.key == myself.key end)
 end), true)
 vim.api.nvim_set_current_win(vim.fn.bufwinid(sidebar.buf))
 vim.cmd("Zulip")

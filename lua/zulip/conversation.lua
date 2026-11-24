@@ -355,11 +355,16 @@ local function send(buf)
     local params = conversation.stream_id
             and { type = "stream", to = conversation.stream_id, topic = conversation.topic, content = content }
         or { type = "direct", to = conversation.user_ids, content = content }
-    api.request("POST", "/messages", params, function(err)
+    api.request("POST", "/messages", params, function(err, _, offline)
         if not valid(buf) then
             return
         end
         vim.b[buf].zulip_sending = false
+        if err and offline then   -- as in the web app: no connection, so the message waits in the outbox and is sent when the server answers again
+            M.outbox_add(params, conversation.name)
+            vim.api.nvim_buf_delete(buf, { force = true })
+            return vim.notify("zulip: no connection; " .. conversation.name .. " message queued, sent when the connection is back")
+        end
         if err then
             M.last_sent[conversation.key] = nil
             return fail(err)
@@ -370,6 +375,72 @@ local function send(buf)
             M.load(conversation)
         end
     end)
+end
+
+--- Messages that could not be sent for lack of a connection, kept in `stdpath("state")/zulip_outbox.json` and retried every 15 s.
+local outbox_path = vim.fs.joinpath(vim.fn.stdpath("state"), "zulip_outbox.json")
+local outbox_timer
+local function outbox_read()
+    local file = io.open(outbox_path, "r")
+    if not file then
+        return {}
+    end
+    local ok, list = pcall(vim.json.decode, file:read("*a"))
+    file:close()
+    return ok and type(list) == "table" and list or {}
+end
+local function outbox_write(list)
+    vim.fn.mkdir(vim.fs.dirname(outbox_path), "p")
+    local file = io.open(outbox_path, "w")
+    if file then
+        file:write(vim.json.encode(list))
+        file:close()
+    end
+end
+local outbox_busy = false
+function M.outbox_flush()
+    local list = outbox_read()
+    if outbox_busy or #list == 0 then
+        if #list == 0 and outbox_timer then
+            outbox_timer:stop()
+            outbox_timer:close()
+            outbox_timer = nil
+        end
+        return
+    end
+    outbox_busy = true
+    local item = list[1]
+    api.request("POST", "/messages", item.params, function(err, _, offline)
+        outbox_busy = false
+        if err and offline then
+            return
+        end
+        local rest = outbox_read()
+        table.remove(rest, 1)
+        outbox_write(rest)
+        if err then
+            fail("queued message to " .. item.name .. " not sent: " .. err)
+        else
+            vim.notify("zulip: queued message sent to " .. item.name)
+        end
+        M.outbox_flush()
+    end)
+end
+function M.outbox_add(params, name)
+    local list = outbox_read()
+    list[#list + 1] = { params = params, name = name }
+    outbox_write(list)
+    M.outbox_start()
+end
+function M.outbox_start()
+    if not outbox_timer and #outbox_read() > 0 then
+        outbox_timer = vim.uv.new_timer()
+        outbox_timer:start(15000, 15000, vim.schedule_wrap(M.outbox_flush))
+    end
+end
+--- How many messages wait in the outbox.
+function M.outbox_count()
+    return #outbox_read()
 end
 
 --- Open the compose buffer of `conversation` below, with `quoted` lines appended.
