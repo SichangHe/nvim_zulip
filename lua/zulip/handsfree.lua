@@ -310,30 +310,56 @@ local function cancel_reply(reply)
     player.paint()
 end
 
+--- Open the conversation before the current one (voice "switch back", key `gvT`).
+function M.switch_back()
+    local previous = require("zulip.conversation").previous
+    if previous then
+        voice.earcon("done")
+        return require("zulip.conversation").open(previous)
+    end
+    voice.earcon("error")
+    vim.notify("zulip voice: no previous conversation")
+end
+
+--- Open the first other conversation in the list with unread messages (voice "next agent", key `gvn`).
+function M.next_unread()
+    local current = require("zulip.conversation").current
+    local row = vim.iter(require("zulip.sidebar").rows):find(function(r)
+        return r.n_unread > 0 and not (current and r.key == current.key)
+    end)
+    if row then
+        voice.earcon("done")
+        return require("zulip.conversation").open(row)
+    end
+    voice.earcon("error")
+    vim.notify("zulip voice: no other conversation has unread messages")
+end
+
 --- Run command-mode commands (the web app's grammar); returns true when something was understood.
 local function run_commands(words)
     local commands = require("zulip.commands")
     local list, ignored = commands.parse(words, config.voice.cancel_word)
-    local said = {}
+    local said, navs = {}, {}
     for _, c in ipairs(list) do
         voice.log("voice control: command %s", vim.inspect(c, { newline = " ", indent = "" }))
         if c.kind == "nav" then
             local nav, ctx = c.nav, M.ctx
-            if player.run and player.run.paused then
-                player.toggle_pause()
-            end
-            if nav.restart then
-                player.restart_message()
-                said[#said + 1] = "from the start"
-            elseif nav.dir == 0 then
-                player.replay_chunk()
-                said[#said + 1] = "again"
-            else
-                for _ = 1, nav.count do
-                    ctx.step(nav.whole and "message" or "chunk", nav.dir)
+            navs[#navs + 1] = function()
+                if player.run and player.run.paused then
+                    player.toggle_pause()
                 end
-                said[#said + 1] = (nav.dir > 0 and "next" or "back") .. (nav.whole and " message" or "") .. (nav.count > 1 and (" " .. nav.count) or "")
+                if nav.restart then
+                    player.restart_message()
+                elseif nav.dir == 0 then
+                    player.replay_chunk()
+                else
+                    for _ = 1, nav.count do
+                        ctx.step(nav.whole and "message" or "chunk", nav.dir)
+                    end
+                end
             end
+            said[#said + 1] = nav.restart and "from the start" or nav.dir == 0 and "again"
+                or (nav.dir > 0 and "next" or "back") .. (nav.whole and " message" or "") .. (nav.count > 1 and (" " .. nav.count) or "")
         elseif c.kind == "pause" then
             if player.run and not player.run.paused then
                 player.toggle_pause()
@@ -347,26 +373,9 @@ local function run_commands(words)
         elseif c.kind == "switch" then
             switch_to(c.name)
         elseif c.kind == "switch_back" then
-            local previous = require("zulip.conversation").previous
-            if previous then
-                voice.earcon("done")
-                require("zulip.conversation").open(previous)
-            else
-                voice.earcon("error")
-                vim.notify("zulip voice: no previous conversation")
-            end
+            M.switch_back()
         elseif c.kind == "next_agent" then
-            local current = require("zulip.conversation").current
-            local row = vim.iter(require("zulip.sidebar").rows):find(function(r)
-                return r.n_unread > 0 and not (current and r.key == current.key)
-            end)
-            if row then
-                voice.earcon("done")
-                require("zulip.conversation").open(row)
-            else
-                voice.earcon("error")
-                vim.notify("zulip voice: no other conversation has unread messages")
-            end
+            M.next_unread()
         elseif c.kind == "send_log" then
             voice.send_log()
             said[#said + 1] = "sending the log"
@@ -377,8 +386,22 @@ local function run_commands(words)
         end
     end
     if #said > 0 then
+        -- 🧑 (web) "It should, say. Back, with the number first, and then, start playing": the confirmation is spoken, then the navigation runs
         voice.earcon("tick")
         vim.notify("zulip voice: " .. table.concat(said, ", "))
+        if player.run and not player.run.paused and #navs > 0 then
+            player.toggle_pause()
+        end
+        local run_navs = function()
+            for _, f in ipairs(navs) do
+                f()
+            end
+        end
+        if config.voice.say_commands then
+            voice.say(table.concat(said, ", "), run_navs)
+        else
+            run_navs()
+        end
     end
     if #list == 0 and #ignored > 0 then
         voice.earcon("error")

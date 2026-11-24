@@ -541,6 +541,8 @@ function M.open(conversation)
             { keys.check, "test player, microphone and service", voice.check },
             { keys.log, "send the voice log to the server", voice.send_log },
             { keys.device, "choose the microphone", function() voice.choose_device() end },
+            { keys.switch_back, "switch back to the previous conversation", function() require("zulip.handsfree").switch_back() end },
+            { keys.next_unread, "next conversation with unread messages", function() require("zulip.handsfree").next_unread() end },
         }
         for _, action in ipairs(actions) do
             if action[1] then

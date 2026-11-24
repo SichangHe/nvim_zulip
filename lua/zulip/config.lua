@@ -47,6 +47,8 @@ return {
         --- A reply ending in `cancel_word` (or "cancel", "never mind", "scratch that", "forget it") is discarded, as in the web app.
         command_word = "katana",
         cancel_word = "macaroni",
+        --- Speak command confirmations ("back three") before acting, as the web app does.
+        say_commands = true,
         long_silence_s = 6,
         empty_s = 8,
         --- Playback speed, 0.5 to 3.0 in steps of 0.1; `play_cmd` must accept `-af` filters for speeds other than 1.
@@ -78,6 +80,8 @@ return {
             check = "c",
             log = "L",
             device = "m",
+            switch_back = "T",
+            next_unread = "n",
         },
     },
     sidebar_width = 40,

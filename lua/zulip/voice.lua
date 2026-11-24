@@ -910,6 +910,35 @@ function M.earcon(kind)
     spawn(config.voice.play_cmd, { stdin = wav(table.concat(pcm)), text = false }, function() end)
 end
 
+--- Say a short confirmation such as "back three", then call `then_do` (also when speech fails, at once, so a command never waits on it).
+function M.say(text, then_do)
+    then_do = then_do or function() end
+    local done = false
+    local function finish()
+        if not done then
+            done = true
+            then_do()
+        end
+    end
+    local timer = vim.defer_fn(finish, 4000)
+    M.tts({ text }, 0, function(err, bundle)
+        if err or not bundle then
+            log("say %q failed: %s", text, tostring(err))
+            return finish()
+        end
+        M.fetch(bundle, function(fetch_err)
+            if fetch_err or not bundle.bytes or done then
+                return finish()
+            end
+            M.mute_until_ms = vim.uv.now() + (bundle.durationMs or 1500) + 300
+            spawn(config.voice.play_cmd, { stdin = bundle.bytes, text = false }, function()
+                pcall(function() timer:stop() end)
+                finish()
+            end)
+        end)
+    end)
+end
+
 --- Start the hands-free listener: `on_text(text)` gets each transcribed piece; `on_done(err)` once it is recording or failed.
 function M.listen(on_text, on_done)
     if M.listener or M.resolving then

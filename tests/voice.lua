@@ -271,4 +271,10 @@ voice.check()
 check("check reports", wait(function() return reported end) and reported:find("ok    service", 1, true) ~= nil and reported:lower():find("quick brown fox", 1, true) ~= nil, true)
 vim.notify = notify
 print(full)
+-- spoken command confirmation: played, then the action runs
+config.voice.play_cmd = { "sh", "-c", "cat > /dev/null" }
+local said_then
+voice.say("back three", function() said_then = true end)
+check("say plays, then acts", wait(function() return said_then end), true)
+
 os.exit(failures == 0 and 0 or 1)

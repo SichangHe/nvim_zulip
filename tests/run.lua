@@ -43,6 +43,7 @@ do -- command mode and cancel word, the web app's grammar
     local v = require("zulip.voice")
     local steps = {}
     handsfree.start_pulse()
+    require("zulip.config").voice.say_commands = false
     handsfree.on, handsfree.ctx = true, { step = function(unit, delta) steps[#steps + 1] = unit .. delta end, compose = function() return vim.api.nvim_create_buf(false, true) end }
     local notify = vim.notify
     vim.notify = function() end
