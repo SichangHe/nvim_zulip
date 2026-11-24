@@ -115,6 +115,112 @@ local function item_of(message)
     return item
 end
 
+--- The sentences of a chunk's spoken text.
+local function sentences(text)
+    local out = {}
+    for piece in (text .. " "):gmatch("(.-[.!?]+)%s+") do
+        out[#out + 1] = piece
+    end
+    local rest = table.concat(out, " ")
+    local tail = vim.trim(text:sub(#rest + 1))
+    if tail ~= "" then
+        out[#out + 1] = tail
+    end
+    return #out > 0 and out or { text }
+end
+
+--- Index (1-based) of the sentence of `text` at `fraction` (0 to 1) of its length.
+function M.sentence_at(text, fraction)
+    local list, total = sentences(text), #text
+    local at, seen = math.max(0, math.min(1, fraction)) * total, 0
+    for i, sentence in ipairs(list) do
+        seen = seen + #sentence + 1
+        if at < seen then
+            return i
+        end
+    end
+    return #list
+end
+
+local function norm(word)
+    return word:lower():gsub("[^%w]", "")
+end
+
+--- Where chunk `idx` of `item` sits in its block's buffer `lines`: `{ row, col, end_row, end_col }` (0-based rows into `lines`, byte columns), or nil.
+--- The spoken text differs from the shown text (Markdown removed, numbers in words), so the words are aligned greedily and the chunk's first and last matched words bound it.
+function M.chunk_range(lines, item, idx, sentence)
+    local b = item.block_of[idx + 1]
+    if not b then
+        return nil
+    end
+    local first_chunk = idx
+    while first_chunk > 0 and item.block_of[first_chunk] == b do
+        first_chunk = first_chunk - 1
+    end
+    local speech, from, to = {}, nil, nil
+    for k = first_chunk + 1, #item.chunks do
+        if item.block_of[k] ~= b then
+            break
+        end
+        local parts = { item.chunks[k] }
+        if k == idx + 1 and sentence then
+            parts = sentences(item.chunks[k])
+        end
+        for n, part in ipairs(parts) do
+            local here = k == idx + 1 and (not sentence or n == math.min(sentence, #parts))
+            if here then
+                from = #speech + 1
+            end
+            for w in part:gmatch("%S+") do
+                if norm(w) ~= "" then
+                    speech[#speech + 1] = norm(w)
+                end
+            end
+            if here then
+                to = #speech
+            end
+        end
+    end
+    if not from or to < from then
+        return nil
+    end
+    local tokens = {}
+    for row, line in ipairs(lines) do
+        local col = 1
+        while true do
+            local s, e = line:find("%S+", col)
+            if not s then
+                break
+            end
+            local w = norm(line:sub(s, e))
+            if w ~= "" then
+                tokens[#tokens + 1] = { row = row - 1, s = s - 1, e = e, w = w }
+            end
+            col = e + 1
+        end
+    end
+    local at, map = 1, {}
+    for i, w in ipairs(speech) do
+        for j = at, math.min(#tokens, at + 4) do
+            if tokens[j].w == w then
+                map[i], at = j, j + 1
+                break
+            end
+        end
+    end
+    local a, z
+    for i = from, to do
+        a = a or map[i]
+    end
+    for i = to, from, -1 do
+        z = z or map[i]
+    end
+    if not (a and z) or z < a then
+        return nil
+    end
+    return { tokens[a].row, tokens[a].s, tokens[z].row, tokens[z].e }
+end
+
 --- Highlight the block holding the chunk being read; with `follow`, move the cursor there.
 local function highlight(run, follow)
     if not vim.api.nvim_buf_is_valid(run.buf) then
@@ -131,7 +237,14 @@ local function highlight(run, follow)
         return
     end
     local first, last = span.first + 1 + block.first, span.first + 1 + block.last
-    vim.api.nvim_buf_set_extmark(run.buf, ns, first - 1, 0, { end_row = last, end_col = 0, hl_group = "ZulipReading", hl_eol = true })
+    -- 🧑 "the web app is able to highlight only the sentence being spoken": the chunk's words are found in the block's lines; the whole block if they cannot be
+    local range = M.chunk_range(vim.api.nvim_buf_get_lines(run.buf, first - 1, last, false), item, run.idx, run.sentence_for == run.idx and run.sentence or 1)
+    if range then
+        vim.api.nvim_buf_set_extmark(run.buf, ns, first - 1 + range[1], range[2], { end_row = first - 1 + range[3], end_col = range[4], hl_group = "ZulipReading" })
+        first = first + range[1]
+    else
+        vim.api.nvim_buf_set_extmark(run.buf, ns, first - 1, 0, { end_row = last, end_col = 0, hl_group = "ZulipReading", hl_eol = true })
+    end
     local win = follow and run.following and vim.fn.bufwinid(run.buf) or -1
     if win ~= -1 and vim.api.nvim_win_get_cursor(win)[1] ~= first then
         run.expect_move = win == vim.api.nvim_get_current_win()
@@ -282,10 +395,18 @@ local function start_process(run, item, bundle)
                 at = j - 1
             end
         end
+        -- the sentence inside the chunk, estimated from the elapsed share of the chunk's audio by characters
+        local from_ms = bundle.offsetsMs[at + 1] or 0
+        local to_ms = bundle.offsetsMs[at + 2] or bundle.durationMs or from_ms
+        local sentence = M.sentence_at(item.chunks[bundle.firstIdx + at + 1] or "", to_ms > from_ms and (position_ms - from_ms) / (to_ms - from_ms) or 0)
         if bundle.firstIdx + at ~= run.idx then
             run.idx = bundle.firstIdx + at
+            run.sentence, run.sentence_for = sentence, run.idx
             M.last[run.key] = { id = item.message.id, idx = run.idx }
             highlight(run, true)
+        elseif sentence ~= run.sentence or run.sentence_for ~= run.idx then
+            run.sentence, run.sentence_for = sentence, run.idx
+            highlight(run, false)
         end
     end))
     local next_idx = bundle.firstIdx + #bundle.texts

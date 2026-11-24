@@ -22,6 +22,16 @@ do -- 🧑 "I'm still seeing old threads ... agent switching also gives them as 
     check("closed topics hidden unless unread", vim.tbl_map(function(c) return c.topic end, list), { "done_unread", "live" })
     voice.closed = {}
 end
+do -- 🧑 "the web app is able to highlight only the sentence being spoken": the sentence's columns inside its block, across Markdown and a line break
+    local p, v = require("zulip.player"), require("zulip.voice")
+    local c = "Body.\n\nFirst sentence here is long enough to be a chunk of its own, really it is. Second sentence has **bold** words and 6.0% of things\nin it, which is more text. Third one ends it all."
+    local blocks = v.blocks(c)
+    local it = { blocks = blocks, chunks = v.chunks(blocks), block_of = {} }
+    for b, bl in ipairs(blocks) do for _ = 1, #v.chunks({ bl }) do table.insert(it.block_of, b) end end
+    local lines = vim.list_slice(vim.split(c, "\n"), blocks[2].first, blocks[2].last)
+    check("sentence ranges", { p.chunk_range(lines, it, 1, 1), p.chunk_range(lines, it, 1, 2), p.chunk_range(lines, it, 1, 3) }, { { 0, 0, 0, 74 }, { 0, 75, 1, 26 }, { 1, 27, 1, 49 } })
+    check("sentence from elapsed share", { p.sentence_at(it.chunks[2], 0.1), p.sentence_at(it.chunks[2], 0.6), p.sentence_at(it.chunks[2], 0.95) }, { 1, 2, 3 })
+end
 do -- command mode and cancel word, the web app's grammar
     local commands, handsfree = require("zulip.commands"), require("zulip.handsfree")
     local function kinds(text) return vim.tbl_map(function(c) return c.kind == "nav" and ("%s%d%s%s"):format(c.kind, c.nav.dir, c.nav.whole and "m" or "", c.nav.count) or c.kind end, (commands.parse(commands.split(text), "cancel"))) end
