@@ -146,7 +146,7 @@ end
 --- Nothing was said after the start word: close and carry on.
 local function close_empty(reply)
     M.reply = nil
-    voice.earcon("done")
+    voice.earcon("empty")
     resume(reply)
     player.paint()
 end
@@ -304,7 +304,7 @@ local function cancel_reply(reply)
     M.reply = nil
     reply.text = ""
     show(reply)
-    voice.earcon("error")
+    voice.earcon("cancel")
     vim.notify("zulip voice: reply discarded")
     resume(reply)
     player.paint()
@@ -377,7 +377,7 @@ local function run_commands(words)
         end
     end
     if #said > 0 then
-        voice.earcon("done")
+        voice.earcon("tick")
         vim.notify("zulip voice: " .. table.concat(said, ", "))
     end
     if #list == 0 and #ignored > 0 then
@@ -387,8 +387,45 @@ local function run_commands(words)
     return #list > 0
 end
 
+-- 🧑 mode beats, as in the web app: while a reply or command mode is open and nothing has been heard for 5 s, a low beat says the mode
+-- (input: rising, command: two equal); never while reading aloud
+local PULSE_MS = 5000
+local last_sound_ms, pulse_timer = 0, nil
+local function pulse_tick()
+    local command_open = M.command_until and vim.uv.now() < M.command_until
+    if not M.on or not (M.reply or command_open) then
+        return
+    end
+    if player.run and not player.run.paused and player.run.state == "playing" then
+        return
+    end
+    local listener = voice.listener
+    if listener and listener.piece and #listener.piece > 0 then   -- the human is talking
+        last_sound_ms = vim.uv.now()
+        return
+    end
+    if vim.uv.now() - last_sound_ms >= PULSE_MS then
+        last_sound_ms = vim.uv.now()
+        voice.earcon(M.reply and "pulseInput" or "pulseCommand")
+    end
+end
+function M.start_pulse()
+    if not pulse_timer then
+        pulse_timer = vim.uv.new_timer()
+        pulse_timer:start(500, 500, vim.schedule_wrap(pulse_tick))
+    end
+end
+function M.stop_pulse()
+    if pulse_timer then
+        pulse_timer:stop()
+        pulse_timer:close()
+        pulse_timer = nil
+    end
+end
+
 --- Handle one transcribed piece of speech.
 function M.heard(text)
+    last_sound_ms = vim.uv.now()
     if not M.on or voice.session then
         return
     end
@@ -409,7 +446,7 @@ function M.heard(text)
         if #words == 0 then
             M.command_until = vim.uv.now() + COMMAND_WINDOW_MS
             voice.log("voice control: command mode, waiting for a command")
-            voice.earcon("ready")
+            voice.earcon("command")
             vim.notify("zulip voice: command mode")
             return
         end
@@ -452,7 +489,7 @@ function M.heard(text)
     if rest then
         if M.ends_with_cancel(rest) then   -- "attention, some reply, cancel" in one breath: nothing is kept
             voice.log("voice control: start word and cancel word in one utterance, discarded")
-            voice.earcon("error")
+            voice.earcon("cancel")
             return vim.notify("zulip voice: reply discarded")
         end
         open(rest)
@@ -471,6 +508,7 @@ end
 function M.toggle(ctx)
     if M.on then
         voice.log("voice control off")
+        M.stop_pulse()
         require("zulip.state").save(false)
         M.on = false
         if M.reply then
@@ -487,6 +525,7 @@ function M.toggle(ctx)
             return vim.notify("zulip voice: " .. err, vim.log.levels.ERROR)
         end
         M.on = true
+        M.start_pulse()
         require("zulip.state").save(true)
         voice.log("voice control on, start word %q, end word %q", config.voice.start_word, config.voice.end_word)
         voice.earcon("ready")

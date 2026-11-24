@@ -893,13 +893,17 @@ function M.record(buf, cmd, on_text)
 end
 
 --- Play a short tone sequence: `ready`, `done` or `error`; the microphone ignores it meanwhile.
+M.EARCON_NOTES = { ready = { 880, 1320 }, done = { 1320, 880 }, cancel = { 1319, 1047, 784 }, command = { 740, 0, 740 }, tick = { 1568 }, empty = { 1100, 0, 1100 },
+    error = { 1400, 1000, 1400, 1000 }, pulseInput = { 220, 0, 330 }, pulseCommand = { 220, 0, 220 } }
+
 function M.earcon(kind)
-    local notes = ({ ready = { 660, 880 }, done = { 880, 660 }, error = { 220, 220 } })[kind]
+    -- the web app's sounds (recorder.mjs EARCON_NOTES, 0.14 s per note, 0 = a rest), so both clients sound the same
+    local notes = M.EARCON_NOTES[kind] or M.EARCON_NOTES.error
     local pcm, rate, note_s = {}, 16000, 0.14
     for _, hz in ipairs(notes) do
         for i = 0, rate * note_s - 1 do
-            local edge = math.min(1, i / 160, (rate * note_s - i) / 160)
-            pcm[#pcm + 1] = le(math.floor(26000 * edge * math.sin(2 * math.pi * hz * i / rate)) % 65536, 2)
+            local edge = math.min(1, i / 160, (rate * note_s - i) / 480)
+            pcm[#pcm + 1] = le(math.floor(hz > 0 and 15000 * edge * math.sin(2 * math.pi * hz * i / rate) or 0) % 65536, 2)
         end
     end
     M.mute_until_ms = vim.uv.now() + #notes * note_s * 1000 + 250

@@ -40,7 +40,9 @@ do -- command mode and cancel word, the web app's grammar
     check("back back then stop", kinds("back back stop"), { "nav-12", "pause" })
     check("restart", kinds("from the start"), { "nav-1m1" })
     check("switch, next agent, switch back, log", { kinds("switch to terminal viz")[1], kinds("next agent")[1], kinds("go back")[1], kinds("send the log")[1] }, { "switch", "next_agent", "switch_back", "send_log" })
+    local v = require("zulip.voice")
     local steps = {}
+    handsfree.start_pulse()
     handsfree.on, handsfree.ctx = true, { step = function(unit, delta) steps[#steps + 1] = unit .. delta end, compose = function() return vim.api.nvim_create_buf(false, true) end }
     local notify = vim.notify
     vim.notify = function() end
@@ -56,6 +58,14 @@ do -- command mode and cancel word, the web app's grammar
     handsfree.heard("is also wrong. Macaroni.")
     check("cancel word discards an open reply", handsfree.reply, nil)
     check("cancel phrases", { handsfree.ends_with_cancel("Some words. Never mind."), handsfree.ends_with_cancel("Cancel the meeting tomorrow."), handsfree.ends_with_cancel("Okay. Macaroni") }, { true, false, true })
+    local played, earcon = {}, v.earcon
+    v.earcon = function(kind) played[#played + 1] = kind end
+    handsfree.heard("Attention, a reply")
+    vim.wait(5800, function() return vim.tbl_contains(played, "pulseInput") end, 100)
+    check("mode beat after 5 s of silence in a reply", vim.tbl_contains(played, "pulseInput"), true)
+    handsfree.heard("Macaroni.")
+    v.earcon = earcon
+    handsfree.stop_pulse()
     vim.notify, handsfree.on = notify, false
 end
 do -- 🧑 "The speech drops numbers. E.g. 6.0% gets pronounced as zero percent": same strings as the service's text.mjs, so the pre-rendered audio matches
