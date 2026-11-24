@@ -409,6 +409,9 @@ function M.compose(conversation, quoted)
         if config.voice.keys.interrupt then
             vim.keymap.set("n", config.voice.keys.interrupt, player.stop, { buffer = buf, desc = "Zulip voice: stop reading" })
         end
+        vim.api.nvim_buf_create_user_command(buf, "ZulipUpload", function(command)
+            M.upload(buf, command.args)
+        end, { nargs = 1, complete = "file", desc = "Upload a file and insert its link" })
     end
     local win = vim.fn.bufwinid(buf)
     if win == -1 then
@@ -422,6 +425,29 @@ function M.compose(conversation, quoted)
         vim.api.nvim_buf_set_lines(buf, empty and 0 or -1, -1, false, quoted)
     end
     vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
+end
+
+--- 🧑 (web) "web interface cannot do uploads", and parity: upload the file `path` and put its link in the compose buffer `buf` at the end.
+function M.upload(buf, path)
+    path = vim.fn.expand(path)
+    if vim.fn.filereadable(path) == 0 then
+        return vim.notify("zulip: no such file: " .. path, vim.log.levels.ERROR)
+    end
+    local name = vim.fn.fnamemodify(path, ":t")
+    vim.notify("zulip: uploading " .. name)
+    require("zulip.api").request("POST", "/user_uploads", { file = { file = path } }, function(err, reply)
+        if err or not reply.url then
+            return vim.notify("zulip: upload failed: " .. tostring(err), vim.log.levels.ERROR)
+        end
+        if not valid(buf) then
+            return
+        end
+        local link = ("[%s](%s)"):format(name, reply.url)
+        local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+        local empty = #lines == 1 and lines[1] == ""
+        vim.api.nvim_buf_set_lines(buf, empty and 0 or -1, -1, false, { link })
+        vim.notify("zulip: uploaded " .. name)
+    end, 300)
 end
 
 --- The task tag in `word`, such as `nvim_omnigent` in `[nvim_omnigent]` or `nvim_omnigent.md`, or `nil`.

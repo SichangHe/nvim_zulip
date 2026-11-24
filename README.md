@@ -62,6 +62,8 @@ Voice settings (autoplay, speed, follow, voice control on/off, microphone, start
 
 Command mode, as in the web app: say the command word (`voice.command_word`, default `katana`), then commands: `next`, `back`, `skip backward three`, `previous message`, `restart`, `again`, `stop`, `play`, `next agent`, `switch back`, `switch to NAME`, `send log`. A reply whose last sentence is the cancel word (`voice.cancel_word`, default `macaroni`, as in the web app) or "cancel", "never mind", "scratch that", "forget it" is discarded. Commands are confirmed aloud ("back three") before they run (`voice.say_commands`). `gvT` switches back, `gvn` opens the next conversation with unread messages
 
+Uploads: in a compose buffer, `:ZulipUpload PATH` uploads the file and adds its link
+
 Local speech: on a Mac with [mac_tts](https://github.com/SichangHe/mac_tts) installed, `voice.local_tts = { "mac-tts" }` makes the speech on the laptop (through `via` too) instead of downloading it from the service
 
 If Neovim runs on a remote machine without audio, set `voice.via = { "ssh", "-p", "2222", "localhost" }` with `RemoteForward 2222 localhost:22` in the laptop's SSH config, so the audio commands run on the laptop.

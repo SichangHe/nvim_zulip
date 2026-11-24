@@ -337,6 +337,12 @@ vim.cmd("normal gg")
 vim.fn.search("^## ", "cW")
 vim.cmd("normal Vj\r")
 check("selection is quoted", vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]:match("^> ## .+ · %d+%-%d+%-%d+ %d+:%d+$") ~= nil, true)
+local upload_file = vim.fn.tempname() .. "_nvim_zulip_upload.txt"
+vim.fn.writefile({ "upload test" }, upload_file)
+vim.cmd("ZulipUpload " .. upload_file)
+check("upload link inserted", vim.wait(30000, function()
+    return text(0):find("](/user_uploads/", 1, true) ~= nil
+end), true)
 vim.cmd("bwipeout!")
 sidebar.refresh()
 check("sidebar lists the conversation", vim.wait(20000, function()
