@@ -43,9 +43,10 @@ return {
         --- `long_silence_s` of silence) to send it and resume; a pause with nothing said resumes after `empty_s`.
         start_word = "attention",
         end_word = "tomato",
-        --- Command mode, as in the web app: `command_word` then commands ("katana, skip backward three", "katana, switch to terminal"); `cancel_word` in a reply discards it.
+        --- Command mode, as in the web app: `command_word` then commands ("katana, skip backward three", "katana, switch to terminal").
+        --- A reply ending in `cancel_word` (or "cancel", "never mind", "scratch that", "forget it") is discarded, as in the web app.
         command_word = "katana",
-        cancel_word = "cancel",
+        cancel_word = "macaroni",
         long_silence_s = 6,
         empty_s = 8,
         --- Playback speed, 0.5 to 3.0 in steps of 0.1; `play_cmd` must accept `-af` filters for speeds other than 1.

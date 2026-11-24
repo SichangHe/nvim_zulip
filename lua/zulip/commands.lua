@@ -112,7 +112,7 @@ function M.parse(words, cancel_word)
             local from = i + ((words[i + 1] == "agent" and words[i + 2] == "to") and 3 or 2)
             out[#out + 1] = { kind = "switch", name = table.concat(words, " ", from) }
             break
-        elseif t == cancel_word then
+        elseif t == cancel_word or t == "cancel" or phrase(words, i, 2) == "never mind" or phrase(words, i, 2) == "scratch that" or phrase(words, i, 2) == "forget it" then
             out[#out + 1] = { kind = "cancel" }
             break
         else

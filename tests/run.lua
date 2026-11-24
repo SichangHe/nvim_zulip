@@ -43,8 +43,9 @@ do -- command mode and cancel word, the web app's grammar
     handsfree.heard("Attention, this reply is wrong. Cancel.")
     check("start word, reply and cancel word in one breath: nothing kept", handsfree.reply, nil)
     handsfree.heard("Attention, this reply")
-    handsfree.heard("is also wrong. Cancel.")
+    handsfree.heard("is also wrong. Macaroni.")
     check("cancel word discards an open reply", handsfree.reply, nil)
+    check("cancel phrases", { handsfree.ends_with_cancel("Some words. Never mind."), handsfree.ends_with_cancel("Cancel the meeting tomorrow."), handsfree.ends_with_cancel("Okay. Macaroni") }, { true, false, true })
     vim.notify, handsfree.on = notify, false
 end
 do -- 🧑 "The speech drops numbers. E.g. 6.0% gets pronounced as zero percent": same strings as the service's text.mjs, so the pre-rendered audio matches

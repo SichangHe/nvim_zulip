@@ -261,6 +261,30 @@ local function open(rest)
 end
 
 local COMMAND_WINDOW_MS = 8000
+local CANCEL_PHRASES = { cancel = true, ["cancel that"] = true, ["never mind"] = true, ["scratch that"] = true, ["forget it"] = true }
+
+--- Whether `text`'s last sentence is a cancel: a fixed phrase, or only the cancel word (the web app's `endsWithCancel`).
+function M.ends_with_cancel(text)
+    local last
+    for sentence in text:gmatch("[^.!?]+") do
+        if vim.trim(sentence) ~= "" then
+            last = sentence
+        end
+    end
+    if not last then
+        return false
+    end
+    local words = require("zulip.commands").split(last)
+    if CANCEL_PHRASES[table.concat(words, " ")] then
+        return true
+    end
+    for _, w in ipairs(words) do
+        if not M.sounds_like(w, config.voice.cancel_word) then
+            return false
+        end
+    end
+    return #words > 0
+end
 
 --- `words` without a leading start word and command word, and whether the command word was there.
 local function command_words(text)
@@ -402,8 +426,7 @@ function M.heard(text)
         return player.paint()
     end
     if M.reply then
-        local plain = require("zulip.commands").split(text)
-        if plain[#plain] and M.sounds_like(plain[#plain], config.voice.cancel_word) then
+        if M.ends_with_cancel(text) then
             voice.log("voice control: cancel word, reply discarded")
             return cancel_reply(M.reply)
         end
@@ -427,8 +450,7 @@ function M.heard(text)
     local rest = M.after_start_word(text)
     voice.log("voice control: heard %q, start word %s", text, rest and ("matched, rest %q"):format(rest) or "not found, ignored")
     if rest then
-        local plain = require("zulip.commands").split(rest)
-        if plain[#plain] and M.sounds_like(plain[#plain], config.voice.cancel_word) then   -- "attention, some reply, cancel" in one breath: nothing is kept
+        if M.ends_with_cancel(rest) then   -- "attention, some reply, cancel" in one breath: nothing is kept
             voice.log("voice control: start word and cancel word in one utterance, discarded")
             voice.earcon("error")
             return vim.notify("zulip voice: reply discarded")
