@@ -409,6 +409,29 @@ end
 --- Text said in the audio file `path`; `on_done(err, text)`.
 --- `prompt` (optional) biases recognition toward control words.
 function M.stt(path, on_done, prompt)
+    -- local speech to text with mac_stt (`voice.local_stt`), on this machine or through `via`: the audio goes over standard input, so it works across ssh too
+    local local_stt = config.voice.local_stt
+    if local_stt and #local_stt > 0 then
+        local file = io.open(path, "rb")
+        local bytes = file and file:read("*a")
+        if file then
+            file:close()
+        end
+        if not bytes then
+            return on_done("cannot read " .. path)
+        end
+        local ext = path:match("%.(%w+)$") or "wav"
+        local program = table.concat(vim.tbl_map(vim.fn.shellescape, local_stt), " ")
+        local script = ('d="$(mktemp -d)"; f="$d/piece.%s"; cat > "$f"; %s transcribe "$f" --no-clipboard; s=$?; rm -rf "$d"; exit $s'):format(ext, program)
+        local started = vim.uv.now()
+        return M.spawn({ "sh", "-c", script }, { stdin = bytes, text = true }, function(result)
+            if result.code ~= 0 then
+                return on_done("local speech to text failed: " .. vim.trim(result.stderr or ""))
+            end
+            log("local stt %d ms: %q", vim.uv.now() - started, vim.trim(result.stdout or ""))
+            on_done(nil, vim.trim(result.stdout or ""))
+        end)
+    end
     with_relay(on_done, function()
         api.request("POST", "/user_uploads", { file = { file = path } }, function(err, upload)
             if err then

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stand-in for `mac-stt transcribe FILE --no-clipboard`: prints a fixed text naming the file's size.
+[ "$1" = transcribe ] || exit 2
+echo "heard $(wc -c < "$2" | tr -d ' ') bytes"

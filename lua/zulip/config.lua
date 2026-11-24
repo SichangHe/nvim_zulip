@@ -32,6 +32,9 @@ return {
         --- Make speech on this machine (or through `via`) instead of the service, e.g. `{ "mac-tts" }` (github.com/SichangHe/mac_tts);
         --- the command must accept `--lines DIR` as mac_tts does. Empty uses the service.
         local_tts = {},
+        --- Transcribe on this machine (or through `via`) instead of the service, e.g. `{ "mac-stt" }` (github.com/SichangHe/mac_stt);
+        --- the command must accept `transcribe FILE --no-clipboard` and print the text. Empty uses the service.
+        local_stt = {},
         --- Plays the audio on its standard input; must accept `-ss SECONDS` right after the program name.
         play_cmd = { "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-i", "-" },
         --- Microphone: `auto` (macOS: the first real microphone that delivers a signal, skipping BlackHole, Zoom and the like),
