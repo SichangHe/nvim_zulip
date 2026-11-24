@@ -931,6 +931,8 @@ function M.unlisten()
 end
 
 M.priorities = {}
+--- Topics of closed tasks (name -> true); hidden unless unread.
+M.closed = {}
 local priorities_at = 0
 
 --- Ask the service for the human manager's topic priorities (at most every minute); `on_change()` runs when they arrive and differ.
@@ -950,8 +952,13 @@ function M.refresh_priorities(on_change)
                     fresh[topic] = number
                 end
             end
-            if vim.inspect(fresh) ~= vim.inspect(M.priorities) then
-                M.priorities = fresh
+            -- 🧑 "I'm still seeing old threads ... agent switching also gives them as options": topics of closed tasks, named by the service
+            local closed = {}
+            for _, name in ipairs(type(result.closed) == "table" and result.closed or {}) do
+                closed[name] = true
+            end
+            if vim.inspect(fresh) ~= vim.inspect(M.priorities) or vim.inspect(closed) ~= vim.inspect(M.closed) then
+                M.priorities, M.closed = fresh, closed
                 on_change()
             end
         end)

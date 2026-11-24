@@ -69,7 +69,10 @@ function M.conversations(messages, my_id)
         end
     end
     M.sort(list)
-    return list
+    local closed = require("zulip.voice").closed
+    return vim.tbl_filter(function(c)
+        return not (c.topic and closed[c.topic]) or c.n_unread > 0
+    end, list)
 end
 
 --- Human-manager priorities (topic -> number; lower first, unset last), then newest first.
@@ -119,8 +122,7 @@ end
 local function refresh_priorities()
     require("zulip.voice").refresh_priorities(function()
         if #M.rows > 0 then
-            M.sort(M.rows)
-            render(M.rows)
+            M.refresh() -- refetches, so closed topics leave the list (and come back if reopened)
         end
     end)
 end
