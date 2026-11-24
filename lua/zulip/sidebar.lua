@@ -11,6 +11,30 @@ local M = {
     pending = false,
 }
 local generation = 0
+--- Channels the account muted (stream_id -> true), read from its subscriptions every 5 minutes.
+M.muted = {}
+local muted_at = 0
+local function refresh_muted(on_change)
+    if vim.uv.now() - muted_at < 300000 and muted_at > 0 then
+        return
+    end
+    muted_at = vim.uv.now()
+    api.request("GET", "/users/me/subscriptions", {}, function(err, reply)
+        if err or type(reply.subscriptions) ~= "table" then
+            return
+        end
+        local fresh = {}
+        for _, sub in ipairs(reply.subscriptions) do
+            if sub.is_muted then
+                fresh[sub.stream_id] = true
+            end
+        end
+        if vim.inspect(fresh) ~= vim.inspect(M.muted) then
+            M.muted = fresh
+            on_change()
+        end
+    end)
+end
 local retry_timer
 
 local function stop()
@@ -71,6 +95,9 @@ function M.conversations(messages, my_id)
     M.sort(list)
     local closed = require("zulip.voice").closed
     return vim.tbl_filter(function(c)
+        if c.stream_id and M.muted[c.stream_id] then   -- muted channels are left out, as in the web app
+            return false
+        end
         return not (c.topic and closed[c.topic]) or c.n_unread > 0
     end, list)
 end
@@ -175,6 +202,7 @@ function M.refresh()
             local conversations = M.conversations(reply.messages, api.account.user_id)
             render(conversations)
             refresh_priorities()
+            refresh_muted(M.refresh)
             require("zulip.conversation").reload_changed(conversations)
             if M.pending then
                 M.pending = false

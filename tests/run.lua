@@ -20,6 +20,11 @@ do -- 🧑 "I'm still seeing old threads ... agent switching also gives them as 
     local m = function(id, subject, flags) return { type = "stream", stream_id = 1, display_recipient = "t", subject = subject, id = id, flags = flags, sender_id = 2 } end
     local list = sidebar.conversations({ m(1, "done", { "read" }), m(2, "live", { "read" }), m(3, "done_unread", {}) }, 9)
     check("closed topics hidden unless unread", vim.tbl_map(function(c) return c.topic end, list), { "done_unread", "live" })
+    sidebar.muted = { [7] = true }
+    local muted_msg = m(4, "noise", {})
+    muted_msg.stream_id = 7
+    check("muted channel hidden", #sidebar.conversations({ muted_msg }, 9), 0)
+    sidebar.muted = {}
     voice.closed = {}
 end
 do -- 🧑 "the web app is able to highlight only the sentence being spoken": the sentence's columns inside its block, across Markdown and a line break

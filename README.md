@@ -72,7 +72,7 @@ If Neovim runs on a remote machine without audio, set `voice.via = { "ssh", "-p"
 
 - The sidebar lists only conversations among the newest `n_recent` messages, and a conversation shows only its newest `n_shown` messages.
 - Muted channels and topics are listed like the others.
-- No starting a new topic or direct message, no editing, reactions or uploading.
+- No starting a new topic or direct message, no editing or reactions. Muted channels are left out of the list.
 
 ## Develop
 
