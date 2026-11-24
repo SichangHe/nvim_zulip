@@ -475,7 +475,14 @@ end
 
 --- Show `conversation` and load its messages:
 --- from the sidebar in the window beside it, from elsewhere in the current window.
+--- The conversation open now and the one before it (voice "switch back").
+M.current, M.previous = nil, nil
+
 function M.open(conversation)
+    if M.current and M.current.key ~= conversation.key then
+        M.previous = M.current
+    end
+    M.current = conversation
     local buf = M.bufs[conversation.key]
     if not valid(buf) then
         buf = vim.api.nvim_create_buf(true, true)

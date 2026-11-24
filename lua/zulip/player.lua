@@ -461,6 +461,23 @@ function M.step_message(delta)
     restart(run)
 end
 
+--- Replay the chunk being read from its start.
+function M.replay_chunk()
+    if M.run then
+        restart(M.run)
+    end
+end
+
+--- Replay the message being read from its first chunk.
+function M.restart_message()
+    local run = M.run
+    if not run then
+        return
+    end
+    run.idx = 0
+    restart(run)
+end
+
 --- Run `fn` now, or when the reading in progress ends (not if it is stopped or replaced).
 function M.after_reading(fn)
     if M.run then

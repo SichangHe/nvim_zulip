@@ -260,6 +260,109 @@ local function open(rest)
     player.paint()
 end
 
+local COMMAND_WINDOW_MS = 8000
+
+--- `words` without a leading start word and command word, and whether the command word was there.
+local function command_words(text)
+    local commands = require("zulip.commands")
+    local words = commands.split(M.after_start_word(text) or text)
+    local found = false
+    while words[1] and M.sounds_like(words[1], config.voice.command_word) do
+        table.remove(words, 1)
+        found = true
+    end
+    return words, found
+end
+
+--- Discard the reply in progress: the draft goes back to what it was before the start word.
+local function cancel_reply(reply)
+    cancel_timer(reply)
+    M.reply = nil
+    reply.text = ""
+    show(reply)
+    voice.earcon("error")
+    vim.notify("zulip voice: reply discarded")
+    resume(reply)
+    player.paint()
+end
+
+--- Run command-mode commands (the web app's grammar); returns true when something was understood.
+local function run_commands(words)
+    local commands = require("zulip.commands")
+    local list, ignored = commands.parse(words, config.voice.cancel_word)
+    local said = {}
+    for _, c in ipairs(list) do
+        voice.log("voice control: command %s", vim.inspect(c, { newline = " ", indent = "" }))
+        if c.kind == "nav" then
+            local nav, ctx = c.nav, M.ctx
+            if player.run and player.run.paused then
+                player.toggle_pause()
+            end
+            if nav.restart then
+                player.restart_message()
+                said[#said + 1] = "from the start"
+            elseif nav.dir == 0 then
+                player.replay_chunk()
+                said[#said + 1] = "again"
+            else
+                for _ = 1, nav.count do
+                    ctx.step(nav.whole and "message" or "chunk", nav.dir)
+                end
+                said[#said + 1] = (nav.dir > 0 and "next" or "back") .. (nav.whole and " message" or "") .. (nav.count > 1 and (" " .. nav.count) or "")
+            end
+        elseif c.kind == "pause" then
+            if player.run and not player.run.paused then
+                player.toggle_pause()
+            end
+            said[#said + 1] = "paused"
+        elseif c.kind == "play" then
+            if player.run and player.run.paused then
+                player.toggle_pause()
+            end
+            said[#said + 1] = "playing"
+        elseif c.kind == "switch" then
+            switch_to(c.name)
+        elseif c.kind == "switch_back" then
+            local previous = require("zulip.conversation").previous
+            if previous then
+                voice.earcon("done")
+                require("zulip.conversation").open(previous)
+            else
+                voice.earcon("error")
+                vim.notify("zulip voice: no previous conversation")
+            end
+        elseif c.kind == "next_agent" then
+            local current = require("zulip.conversation").current
+            local row = vim.iter(require("zulip.sidebar").rows):find(function(r)
+                return r.n_unread > 0 and not (current and r.key == current.key)
+            end)
+            if row then
+                voice.earcon("done")
+                require("zulip.conversation").open(row)
+            else
+                voice.earcon("error")
+                vim.notify("zulip voice: no other conversation has unread messages")
+            end
+        elseif c.kind == "send_log" then
+            voice.send_log()
+            said[#said + 1] = "sending the log"
+        elseif c.kind == "cancel" then
+            if M.reply then
+                cancel_reply(M.reply)
+            end
+        end
+    end
+    if #said > 0 then
+        voice.earcon("done")
+        vim.notify("zulip voice: " .. table.concat(said, ", "))
+    end
+    if #list == 0 and #ignored > 0 then
+        voice.earcon("error")
+        vim.notify(("zulip voice: command not recognized: %q. Commands: next, back, skip backward N, restart, next message, previous message, next agent, switch back, switch to NAME, stop, play, %s"):format(table.concat(ignored, " "), config.voice.cancel_word))
+    end
+    return #list > 0
+end
+
 --- Handle one transcribed piece of speech.
 function M.heard(text)
     if not M.on or voice.session then
@@ -273,6 +376,36 @@ function M.heard(text)
         if n and choice[n] then
             voice.earcon("done")
             return require("zulip.conversation").open(choice[n])
+        end
+    end
+    -- 🧑 "We are still not at feature parity ... Do it": command mode (command word, then commands) and the cancel word, as in the web app
+    local words, has_command_word = command_words(text)
+    if has_command_word or (M.command_until and vim.uv.now() < M.command_until) then
+        M.command_until = nil
+        if #words == 0 then
+            M.command_until = vim.uv.now() + COMMAND_WINDOW_MS
+            voice.log("voice control: command mode, waiting for a command")
+            voice.earcon("ready")
+            vim.notify("zulip voice: command mode")
+            return
+        end
+        if M.reply then
+            cancel_timer(M.reply)
+            local reply = M.reply
+            local parsed = require("zulip.commands").parse(words, config.voice.cancel_word)
+            if not (parsed[1] and parsed[1].kind == "cancel") then
+                M.reply = nil
+                resume(reply)
+            end
+        end
+        run_commands(words)
+        return player.paint()
+    end
+    if M.reply then
+        local plain = require("zulip.commands").split(text)
+        if plain[#plain] and M.sounds_like(plain[#plain], config.voice.cancel_word) then
+            voice.log("voice control: cancel word, reply discarded")
+            return cancel_reply(M.reply)
         end
     end
     local command = M.reply and M.navigation(text)
@@ -294,6 +427,12 @@ function M.heard(text)
     local rest = M.after_start_word(text)
     voice.log("voice control: heard %q, start word %s", text, rest and ("matched, rest %q"):format(rest) or "not found, ignored")
     if rest then
+        local plain = require("zulip.commands").split(rest)
+        if plain[#plain] and M.sounds_like(plain[#plain], config.voice.cancel_word) then   -- "attention, some reply, cancel" in one breath: nothing is kept
+            voice.log("voice control: start word and cancel word in one utterance, discarded")
+            voice.earcon("error")
+            return vim.notify("zulip voice: reply discarded")
+        end
         open(rest)
     end
 end

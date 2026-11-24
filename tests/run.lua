@@ -22,6 +22,31 @@ do -- 🧑 "I'm still seeing old threads ... agent switching also gives them as 
     check("closed topics hidden unless unread", vim.tbl_map(function(c) return c.topic end, list), { "done_unread", "live" })
     voice.closed = {}
 end
+do -- command mode and cancel word, the web app's grammar
+    local commands, handsfree = require("zulip.commands"), require("zulip.handsfree")
+    local function kinds(text) return vim.tbl_map(function(c) return c.kind == "nav" and ("%s%d%s%s"):format(c.kind, c.nav.dir, c.nav.whole and "m" or "", c.nav.count) or c.kind end, (commands.parse(commands.split(text), "cancel"))) end
+    check("skip backward three", kinds("skip backward three"), { "nav-1" .. "3" })
+    check("skip previous message is one command", kinds("skip previous message"), { "nav-1m1" })
+    check("back back then stop", kinds("back back stop"), { "nav-12", "pause" })
+    check("restart", kinds("from the start"), { "nav-1m1" })
+    check("switch, next agent, switch back, log", { kinds("switch to terminal viz")[1], kinds("next agent")[1], kinds("go back")[1], kinds("send the log")[1] }, { "switch", "next_agent", "switch_back", "send_log" })
+    local steps = {}
+    handsfree.on, handsfree.ctx = true, { step = function(unit, delta) steps[#steps + 1] = unit .. delta end, compose = function() return vim.api.nvim_create_buf(false, true) end }
+    local notify = vim.notify
+    vim.notify = function() end
+    handsfree.heard("Katana, skip backward three.")
+    check("spoken command word runs the commands", steps, { "chunk-1", "chunk-1", "chunk-1" })
+    steps = {}
+    handsfree.heard("Katana.")
+    handsfree.heard("Previous message.")
+    check("command word alone, then the command", steps, { "message-1" })
+    handsfree.heard("Attention, this reply is wrong. Cancel.")
+    check("start word, reply and cancel word in one breath: nothing kept", handsfree.reply, nil)
+    handsfree.heard("Attention, this reply")
+    handsfree.heard("is also wrong. Cancel.")
+    check("cancel word discards an open reply", handsfree.reply, nil)
+    vim.notify, handsfree.on = notify, false
+end
 do -- 🧑 "The speech drops numbers. E.g. 6.0% gets pronounced as zero percent": same strings as the service's text.mjs, so the pre-rendered audio matches
     local speech = require("zulip.voice")._speech_text
     for _, case in ipairs({
