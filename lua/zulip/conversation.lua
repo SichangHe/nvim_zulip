@@ -83,6 +83,24 @@ local function span_at(spans, row)
     return found
 end
 
+--- Put the window `win` back where the cursor was when it left `buf` (`M.left`), following the message it was in if the buffer was reloaded since.
+local function restore_left(buf, key, win)
+    local left, shown = M.left[key], M.shown[buf]
+    if not (left and shown and vim.api.nvim_win_is_valid(win)) then
+        return
+    end
+    local n = vim.api.nvim_buf_line_count(buf)
+    local function moved(span, row)
+        local now = span and vim.iter(shown.spans):find(function(s) return s.id == span.id end)
+        return math.max(1, math.min(now and now.first + row - span.first or row, n))
+    end
+    vim.api.nvim_win_call(win, function()
+        local view = vim.fn.winsaveview()
+        view.lnum, view.topline = moved(left.at, left.lnum), moved(left.top, left.topline)
+        vim.fn.winrestview(view)
+    end)
+end
+
 -- 🧑 "mark messages as read after cursor go pass it"
 --- Mark read, when `config.mark_read`, each unread message of `buf` whose last row the cursor in `win` has moved below.
 function M.mark_seen(buf, win)
@@ -668,6 +686,17 @@ function M.open(conversation)
         vim.keymap.set("n", "R", function()
             M.load(conversation)
         end, { buffer = buf, desc = "Reload" })
+        -- 🧑 "fix the problem where using buffer switching lands me at the top of each buffer instead of where I was": a reload while the buffer was
+        -- hidden (a reply arriving after you switched away) replaces every line, which resets Neovim's remembered cursor to the top. Coming back
+        -- to the buffer by any means (:b, :bnext, a picker, <C-^>) now restores the spot saved when you left it.
+        vim.api.nvim_create_autocmd("BufWinEnter", {
+            buffer = buf,
+            callback = function()
+                if M.entering[buf] ~= vim.api.nvim_get_current_win() then
+                    restore_left(buf, conversation.key, vim.api.nvim_get_current_win())
+                end
+            end,
+        })
         vim.api.nvim_create_autocmd("BufLeave", {
             buffer = buf,
             callback = function()

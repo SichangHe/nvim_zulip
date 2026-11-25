@@ -37,6 +37,40 @@ do -- 🧑 "the web app is able to highlight only the sentence being spoken": th
     check("sentence ranges", { p.chunk_range(lines, it, 1, 1), p.chunk_range(lines, it, 1, 2), p.chunk_range(lines, it, 1, 3) }, { { 0, 0, 0, 74 }, { 0, 75, 1, 26 }, { 1, 27, 1, 49 } })
     check("sentence from elapsed share", { p.sentence_at(it.chunks[2], 0.1), p.sentence_at(it.chunks[2], 0.6), p.sentence_at(it.chunks[2], 0.95) }, { 1, 2, 3 })
 end
+do -- 🧑 "using buffer switching lands me at the top of each buffer instead of where I was": a reload while hidden must not lose the spot
+    local real = api.request
+    local n_msgs = 30
+    local function msgs()
+        local out = {}
+        for i = 1, n_msgs do
+            out[i] = { id = 1000 + i, sender_id = 2, sender_full_name = "Agent", content = ("Message %d.\n\nSecond paragraph of %d."):format(i, i), timestamp = 1700000000 + i, flags = { "read" }, type = "stream", subject = "t" }
+        end
+        return out
+    end
+    api.request = function(method, path, params, on_done)
+        if method == "GET" and path == "/messages" then
+            return vim.schedule(function() on_done(nil, { result = "success", messages = msgs() }) end)
+        end
+        return vim.schedule(function() on_done("offline in test", nil, true) end)
+    end
+    local planted = api.account
+    api.account = api.account or { user_id = 9, site = "https://x" }
+    local conv = { key = "77/switchtest", name = "s > switchtest", stream_id = 77, topic = "switchtest" }
+    conversation.open(conv)
+    local buf = conversation.bufs[conv.key]
+    vim.wait(2000, function() return conversation.shown[buf] ~= nil end)
+    vim.api.nvim_win_set_cursor(0, { 20, 0 })
+    local other = vim.api.nvim_create_buf(true, true)
+    vim.cmd("buffer " .. other)
+    n_msgs = 31   -- a new message arrives and the hidden buffer reloads
+    conversation.load(conv)
+    vim.wait(2000, function() return #conversation.shown[buf].messages == 31 end)
+    vim.cmd("buffer " .. buf)
+    check("back on the same line after a hidden reload", vim.api.nvim_win_get_cursor(0)[1], 20)
+    vim.cmd("bwipeout! " .. other)
+    vim.cmd("bwipeout! " .. buf)
+    api.request, api.account = real, planted
+end
 do -- offline outbox, as in the web app: a send with no connection is queued and sent when the server answers
     local real = api.request
     local online, posted = false, {}
