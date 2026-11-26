@@ -68,7 +68,7 @@ Uploads: in a compose buffer, `:ZulipUpload PATH` uploads the file and adds its 
 
 Local speech to text: with [mac_stt](https://github.com/SichangHe/mac_stt) installed, `voice.local_stt = { "mac-stt" }` transcribes on the laptop (through `via` too) instead of uploading each piece to the service
 
-Local speech: on a Mac with [mac_tts](https://github.com/SichangHe/mac_tts) installed, `voice.local_tts = { "mac-tts" }` makes the speech on the laptop (through `via` too) instead of downloading it from the service
+Local speech is the default when `mac-stt` / `mac-tts` are on the PATH (and `via` is empty). Otherwise: on a Mac with [mac_tts](https://github.com/SichangHe/mac_tts) installed, `voice.local_tts = { "mac-tts" }` makes the speech on the laptop (through `via` too) instead of downloading it from the service
 
 If Neovim runs on a remote machine without audio, set `voice.via = { "ssh", "-p", "2222", "localhost" }` with `RemoteForward 2222 localhost:22` in the laptop's SSH config, so the audio commands run on the laptop.
 
