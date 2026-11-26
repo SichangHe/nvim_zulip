@@ -728,7 +728,12 @@ end
 
 --- Take one `FRAME_MS` frame of audio: track level, and cut a piece at a pause or at `max_piece_s`.
 local function feed_frame(session, frame)
-    session.level = vim.uv.now() < M.mute_until_ms and 0 or rms(frame)
+    if vim.uv.now() < M.mute_until_ms then
+        -- Our own earcon or speech is playing and the microphone hears it. Zero the samples, not only the level:
+        -- a loud tone at the start of a piece made the service's speech detector reject the whole piece, speech included.
+        frame = ("\0"):rep(#frame)
+    end
+    session.level = rms(frame)
     session.n_frames = session.n_frames + 1
     session.all[#session.all + 1] = frame
     if session.n_frames == 1 then
@@ -929,7 +934,7 @@ function M.earcon(kind)
             pcm[#pcm + 1] = le(math.floor(hz > 0 and 15000 * edge * math.sin(2 * math.pi * hz * i / rate) or 0) % 65536, 2)
         end
     end
-    M.mute_until_ms = vim.uv.now() + #notes * note_s * 1000 + 250
+    M.mute_until_ms = vim.uv.now() + #notes * note_s * 1000 + 800   -- + the player's start-up delay, during which the tone still arrives late
     spawn(config.voice.play_cmd, { stdin = wav(table.concat(pcm)), text = false }, function() end)
 end
 
@@ -953,7 +958,7 @@ function M.say(text, then_do)
             if fetch_err or not bundle.bytes or done then
                 return finish()
             end
-            M.mute_until_ms = vim.uv.now() + (bundle.durationMs or 1500) + 300
+            M.mute_until_ms = vim.uv.now() + (bundle.durationMs or 1500) + 800
             spawn(config.voice.play_cmd, { stdin = bundle.bytes, text = false }, function()
                 pcall(function() timer:stop() end)
                 finish()
