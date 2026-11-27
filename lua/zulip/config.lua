@@ -2,6 +2,8 @@
 return {
     --- File with the account's `email`, `key` and `site`, as downloaded from Zulip.
     zuliprc = "~/.zuliprc",
+    --- Desktop notifications (osascript on macOS, notify-send elsewhere) for new messages from others in these channels.
+    notify = { enabled = true, channels = { "urgent", "pb-urgent" } },
     --- Initial event reconnect delay in milliseconds (kept under its original option name).
     -- 🧑 "nvim zulip plugin delay is quite big on receiving messages"
     refresh_ms = 2000,

@@ -11,6 +11,7 @@ function M.setup(opts)
     local toggle = require("zulip.sidebar").toggle
     vim.api.nvim_create_user_command("Zulip", toggle, {})
     require("zulip.state").apply(opts)
+    require("zulip.notify").start()
     -- speech on the Mac by default when mac-stt / mac-tts are installed and no `via` is set
     local v = config.voice
     if #v.via == 0 then
