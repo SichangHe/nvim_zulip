@@ -61,6 +61,7 @@ function M.conversations(messages, my_id)
                 key = message.stream_id .. "/" .. message.subject:lower(),
                 name = message.display_recipient .. " > " .. message.subject,
                 stream_id = message.stream_id,
+                channel = message.display_recipient,
                 topic = message.subject,
             }
         else
@@ -102,17 +103,25 @@ function M.conversations(messages, my_id)
     end, list)
 end
 
---- Unread conversations first (🧑 "clients should sort unread threads above read ones"), then human-manager
+--- Unread conversations in the urgent channels (`notify.channels`) first (🧑 "How come the unread urgent channels not
+--- have higher priority?"), then other unread ones (🧑 "clients should sort unread threads above read ones"), then human-manager
 --- priorities (topic -> number; lower first, unset last), then newest first.
 function M.sort(list)
     local prio = require("zulip.voice").priorities
     local function rank(c)
         return c.topic and prio[c.topic] or math.huge
     end
+    local urgent = require("zulip.config").notify.channels
+    local function group(c)
+        if c.n_unread == 0 then
+            return 2
+        end
+        return vim.tbl_contains(urgent, c.channel) and 0 or 1
+    end
     table.sort(list, function(a, b)
-        local ua, ub = a.n_unread > 0, b.n_unread > 0
-        if ua ~= ub then
-            return ua
+        local ga, gb = group(a), group(b)
+        if ga ~= gb then
+            return ga < gb
         end
         local ra, rb = rank(a), rank(b)
         if ra ~= rb then
