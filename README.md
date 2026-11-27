@@ -22,6 +22,8 @@ Options and their defaults are in [`lua/zulip/config.lua`](lua/zulip/config.lua)
 
 `<leader>oz` or `:Zulip` shows or hides the sidebar. A conversation is a channel topic, shown as `channel > topic`, or a direct message, shown by the other people's names. The number before it counts its unread messages.
 
+Urgent messages: a new message from someone else in the `urgent` or `pb-urgent` channel shows a desktop notification (macOS `osascript`, else `notify-send`), whether or not the sidebar is open. Options: `notify = { enabled, channels }`.
+
 `<CR>` moves one step toward sending:
 
 - sidebar: open the conversation. A `new messages` line shows where they start, with the cursor on it the first time; reentering a conversation resumes where the cursor was left. A message is marked read once the cursor moves past its last line. Your own messages never count as unread
