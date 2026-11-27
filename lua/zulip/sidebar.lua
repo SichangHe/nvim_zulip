@@ -102,13 +102,18 @@ function M.conversations(messages, my_id)
     end, list)
 end
 
---- Human-manager priorities (topic -> number; lower first, unset last), then newest first.
+--- Unread conversations first (🧑 "clients should sort unread threads above read ones"), then human-manager
+--- priorities (topic -> number; lower first, unset last), then newest first.
 function M.sort(list)
     local prio = require("zulip.voice").priorities
     local function rank(c)
         return c.topic and prio[c.topic] or math.huge
     end
     table.sort(list, function(a, b)
+        local ua, ub = a.n_unread > 0, b.n_unread > 0
+        if ua ~= ub then
+            return ua
+        end
         local ra, rb = rank(a), rank(b)
         if ra ~= rb then
             return ra < rb
